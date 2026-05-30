@@ -65,22 +65,18 @@
   </div>
 </div>
 
-<!-- Подключаем ОДНУ стабильную библиотеку для сканера штрих-кодов -->
 <script src="https://cloudflare.com"></script>
 
 <script>
-  // ВСТАВЬТЕ СЮДА ТОЛЬКО ID ВАШЕГО ПРОЕКТА ИЗ ССЫЛКИ FIREBASE (например: storage-assistant-default-rtdb)
-  const FIREBASE_PROJECT_ID = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app/"; 
-  
-  // Автоматическая сборка правильного URL адреса базы данных
-  const BASE_URL = `https://${FIREBASE_PROJECT_ID}.firebaseio.com`;
+  // ВСТАВЬТЕ СЮДА ВАШУ ПРЯМУЮ ССЫЛКУ ИЗ FIREBASE:
+  const BASE_URL = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app/"; 
 
   let searchHistory = [];
   let html5QrcodeScanner = null;
 
   loadHistory();
 
-  // Переключение вкладок (Локальная логика, работает ВСЕГДА)
+  // Переключение вкладок
   const tabSearch = document.getElementById('tabSearch');
   const tabAdd = document.getElementById('tabAdd');
   const panelSearch = document.getElementById('panelSearch');
@@ -96,7 +92,7 @@
     stopScanner();
   });
 
-  // Логика кнопки сканера
+  // Кнопка сканера
   document.getElementById('scanBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     if (readerDiv.style.display === 'block') { stopScanner(); } else { startScanner(); }
@@ -129,7 +125,7 @@
     } else { readerDiv.style.display = 'none'; }
   }
 
-  // --- Логика СОХРАНЕНИЯ через REST API (Без библиотек Firebase) ---
+  // Логика СОХРАНЕНИЯ
   document.getElementById('saveBtn').addEventListener('click', async () => {
     const id = document.getElementById('addId').value.trim();
     const name = document.getElementById('addName').value.trim();
@@ -149,20 +145,18 @@
     statusDiv.innerText = "Сохранение...";
 
     try {
-      // Сохраняем имя товара
-      await fetch(`${BASE_URL}/products/${id}/name.json`, {
+      await fetch(BASE_URL + "/products/" + id + "/name.json", {
         method: 'PUT',
         body: JSON.stringify(name)
       });
 
-      // Сохраняем количество в шкафу
-      const response = await fetch(`${BASE_URL}/products/${id}/cabinets/${cabinet}.json`, {
+      const response = await fetch(BASE_URL + "/products/" + id + "/cabinets/" + cabinet.json, {
         method: 'PUT',
         body: JSON.stringify(parseInt(qty, 10))
       });
 
       if (response.ok) {
-        statusDiv.innerHTML = `<span class="success">Успешно сохранено для шкафа ${cabinet}!</span>`;
+        statusDiv.innerHTML = '<span class="success">Успешно сохранено для шкафа ' + cabinet + '!</span>';
         document.getElementById('addId').value = '';
         document.getElementById('addCabinet').value = '';
         document.getElementById('addQty').value = '';
@@ -170,11 +164,11 @@
         throw new Error("Ошибка сервера базы данных");
       }
     } catch (error) {
-      statusDiv.innerHTML = `<span class="error">Ошибка сохранения: ${error.message}</span>`;
+      statusDiv.innerHTML = '<span class="error">Ошибка сохранения: ' + error.message + '</span>';
     }
   });
 
-  // --- Логика ПОИСКА через REST API ---
+  // Логика ПОИСКА
   document.getElementById('searchBtn').addEventListener('click', () => {
     const id = document.getElementById('searchId').value.trim();
     searchProduct(id);
@@ -191,7 +185,7 @@
     resultDiv.innerText = "Загрузка...";
 
     try {
-      const response = await fetch(`${BASE_URL}/products/${id}.json`);
+      const response = await fetch(BASE_URL + "/products/" + id + ".json");
       const product = await response.json();
 
       if (product) {
@@ -204,16 +198,18 @@
       }
     } catch (error) {
       resultDiv.style.background = "#fce4d6";
-      resultDiv.innerHTML = `<span class="error">Ошибка сети: ${error.message}</span>`;
+      resultDiv.innerHTML = '<span class="error">Ошибка сети: ' + error.message + '</span>';
     }
   }
 
   function renderProductCard(productId, product) {
     const resultDiv = document.getElementById('result');
-    let html = `<strong>Название:</strong> ${product.name}<br><strong>Места хранения:</strong><br>`;
+    let html = '<strong>Название:</strong> ' + product.name + '<br><strong>Места хранения:</strong><br>';
     if (!product.cabinets) {
-      html += `<span class="error">Шкафы не указаны.</span>`;
+      html += '<span class="error">Шкафы не указаны.</span>';
       resultDiv.innerHTML = html;
       return;
     }
     Object.keys(product.cabinets).forEach(cabinetName => {
+      const currentQty = product.cabinets[cabinetName];
+
