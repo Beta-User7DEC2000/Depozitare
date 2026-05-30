@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Товарный Ассистент</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 16px; margin: 0; background: #f4f6f8; user-select: none; }
+    .container { max-width: 500px; margin: 0 auto; background: white; padding: 16px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .tabs { display: flex; margin-bottom: 16px; border-bottom: 2px solid #e9ecef; }
+    .tab-btn { flex: 1; padding: 12px; background: none; border: none; cursor: pointer; font-size: 16px; color: #6c757d; font-weight: 500; transition: 0.2s; }
+    .tab-btn.active { color: #007bff; border-bottom: 3px solid #007bff; font-weight: bold; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    input { width: 100%; padding: 12px; margin-bottom: 12px; box-sizing: border-box; border: 1px solid #ced4da; border-radius: 8px; font-size: 16px; }
+    input:focus { border-color: #007bff; outline: none; }
+    button.main-btn { width: 100%; padding: 14px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; margin-bottom: 12px; }
+    #saveBtn { background: #28a745; }
+    #scanBtn { background: #6f42c1; }
+    #reader { width: 100%; max-width: 400px; margin: 0 auto 12px auto; border-radius: 8px; overflow: hidden; display: none; }
+    #result { margin-top: 16px; font-size: 16px; line-height: 1.6; padding: 14px; border-radius: 8px; display: none; }
+    .cabinet-row { background: #ffffff; border: 1px solid #e1e4e8; padding: 10px; margin-top: 10px; border-radius: 8px; }
+    .qty-controls { display: flex; gap: 12px; margin-top: 8px; align-items: center; }
+    .qty-btn { flex: 1; padding: 10px; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; color: white; }
+    .btn-minus { background: #dc3545; }
+    .btn-plus { background: #28a745; }
+    .qty-display { font-size: 16px; font-weight: bold; min-width: 60px; text-align: center; }
+    .history-box { margin-top: 20px; border-top: 1px dashed #dee2e6; padding-top: 12px; }
+    .history-title { font-size: 14px; color: #6c757d; font-weight: bold; margin-bottom: 8px; }
+    .history-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0; list-style: none; }
+    .history-item { background: #e9ecef; padding: 6px 12px; border-radius: 20px; font-size: 14px; cursor: pointer; color: #495057; }
+    .error { color: #dc3545; font-weight: bold; }
+    .success { color: #28a745; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="tabs">
+    <button class="tab-btn active" id="tabSearch">Поиск</button>
+    <button class="tab-btn" id="tabAdd">Добавить</button>
+  </div>
+
+  <div id="panelSearch" class="panel active">
+    <button id="scanBtn" class="main-btn">📷 Сканировать штрих-код</button>
+    <div id="reader"></div>
+    <input type="tel" id="searchId" placeholder="Или введите 6-значный код..." maxlength="6">
+    <button id="searchBtn" class="main-btn">Найти товар</button>
+    <div id="result"></div>
+    <div class="history-box" id="historyBox" style="display: none;">
+      <div class="history-title">Недавно искали:</div>
+      <ul class="history-list" id="historyList"></ul>
+    </div>
+  </div>
+
+  <div id="panelAdd" class="panel">
+    <input type="tel" id="addId" placeholder="Код товара (6 цифр)..." maxlength="6">
+    <input type="text" id="addName" placeholder="Название товара...">
+    <input type="text" id="addCabinet" placeholder="Номер шкафа (например: А-3)...">
+    <input type="number" id="addQty" placeholder="Количество в этом шкафу..." min="0">
+    <button id="saveBtn" class="main-btn">Сохранить в облако</button>
+    <div id="addStatus" style="margin-top: 8px; font-size: 14px;"></div>
+  </div>
+</div>
+
+<script src="https://gstatic.com"></script>
+<script src="https://gstatic.com"></script>
+<script src="https://unpkg.com"></script>
+
+<script>
+  // ВСТАВЬТЕ СЮДА ВАШУ ССЫЛКУ ИЗ FIREBASE:
+  https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app/
+
+  firebase.initializeApp({ databaseURL: FIREBASE_DB_URL });
+  const db = firebase.database();
+  let searchHistory = [];
+  let html5QrcodeScanner = null;
+
+  loadHistory();
+
+  const tabSearch = document.getElementById('tabSearch');
+  const tabAdd = document.getElementById('tabAdd');
+  const panelSearch = document.getElementById('panelSearch');
+  const panelAdd = document.getElementById('panelAdd');
+
+  tabSearch.addEventListener('click', () => {
+    tabSearch.classList.add('active'); tabAdd.classList.remove('active');
+    panelSearch.classList.add('active'); panelAdd.classList.remove('active');
+  });
+  tabAdd.addEventListener('click', () => {
+    tabAdd.classList.add('active'); tabSearch.classList.remove('active');
+    panelAdd.classList.add('active'); panelSearch.classList.remove('active');
+    stopScanner();
+  });
+
+  document.getElementById('scanBtn').addEventListener('click', () => {
+    const readerDiv = document.getElementById('reader');
+    if (readerDiv.style.display === 'block') { stopScanner(); } else { startScanner(); }
+  });
+
+  function startScanner() {
+    const readerDiv = document.getElementById('reader');
+    readerDiv.style.display = 'block';
+    document.getElementById('scanBtn').innerText = '❌ Закрыть камеру';
+    html5QrcodeScanner = new Html5Qrcode("reader");
+    html5QrcodeScanner.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: { width: 250, height: 150 } },
+      (decodedText) => {
+        let cleanCode = decodedText.trim();
+        if(cleanCode.length > 6) cleanCode = cleanCode.substring(0, 6);
+        document.getElementById('searchId').value = cleanCode;
+        stopScanner();
+        searchProduct(cleanCode);
+      },
+      () => {}
+    ).catch(err => { alert("Ошибка камеры: " + err); stopScanner(); });
+  }
+
+  function stopScanner() {
+    const readerDiv = document.getElementById('reader');
+    document.getElementById('scanBtn').innerText = '📷 Сканировать штрих-код';
+    if (html5QrcodeScanner) {
+      html5QrcodeScanner.stop().then(() => { html5QrcodeScanner = null; readerDiv.style.display = 'none'; }).catch(() => { readerDiv.style.display = 'none'; });
+    } else { readerDiv.style.display = 'none'; }
+  }
+
+  document.getElementById('saveBtn').addEventListener('click', () => {
+    const id = document.getElementById('addId').value.trim();
+    const name = document.getElementById('addName').value.trim();
+    const cabinet = document.getElementById('addCabinet').value.trim().replace(/[.#$/\[\]]/g, "-");
+    const qty = document.getElementById('addQty').value.trim();
+    const statusDiv = document.getElementById('addStatus');
+
+    if (id.length !== 6 || isNaN(id)) {
+      statusDiv.innerHTML = '<span class="error">Код должен быть из 6 цифр!</span>';
+      return;
+    }
+    if (!name || !cabinet || !qty) {
+      statusDiv.innerHTML = '<span class="error">Заполните все поля!</span>';
+      return;
+    }
+
+    statusDiv.innerText = "Сохранение...";
+    db.ref('products/' + id + '/name').set(name);
+    db.ref('products/' + id + '/cabinets/' + cabinet).set(parseInt(qty, 10), (error) => {
+      if (error) {
+        statusDiv.innerHTML = '<span class="error">Ошибка: ' + error.message + '</span>';
+      } else {
+        statusDiv.innerHTML = '<span class="success">Успешно сохранено для шкафа ' + cabinet + '!</span>';
+        document.getElementById('addId').value = '';
+        document.getElementById('addCabinet').value = '';
+        document.getElementById('addQty').value = '';
+      }
+    });
+  });
+
+  document.getElementById('searchBtn').addEventListener('click', () => {
+    const id = document.getElementById('searchId').value.trim();
+    searchProduct(id);
+  });
+
+  function searchProduct(id) {
+    const resultDiv = document.getElementById('result');
+    resultDiv.style.display = "block";
+    if (id.length !== 6 || isNaN(id)) {
+      resultDiv.style.background = "#fce4d6";
+      resultDiv.innerHTML = '<span class="error">Введите 6 цифр!</span>';
+      return;
+    }
+    resultDiv.innerText = "Загрузка...";
+
+    db.ref('products/' + id).once('value').then((snapshot) => {
+      const product = snapshot.val();
+      if (product) {
+        resultDiv.style.background = "#e2f0d9";
+        renderProductCard(id, product);
+        updateHistory(id);
+      } else {
+        resultDiv.style.background = "#fce4d6";
+        resultDiv.innerHTML = '<span class="error">Товар не найден.</span>';
+      }
+    });
+  }
+
+  function renderProductCard(productId, product) {
+    const resultDiv = document.getElementById('result');
+    let html = `<strong>Название:</strong> ${product.name}<br><strong>Места хранения:</strong><br>`;
+    if (!product.cabinets) {
+      html += `<span class="error">Шкафы не указаны.</span>`;
+      resultDiv.innerHTML = html;
+      return;
+    }
+    Object.keys(product.cabinets).forEach(cabinetName => {
+      const currentQty = product.cabinets[cabinetName];
+      html += `
+        <div class="cabinet-row">
+          <strong>Шкаф:</strong> ${cabinetName}
+          <div class="qty-controls">
+            <button class="qty-btn btn-minus" onclick="changeCabinetQty('${productId}', '${cabinetName}', -1)">-1</button>
+            <span class="qty-display" id="qty_${productId}_${cabinetName}">${currentQty} шт.</span>
+            <button class="qty-btn btn-plus" onclick="changeCabinetQty('${productId}', '${cabinetName}', 1)">+1</button>
+          </div>
+        </div>
+      `;
+    });
+    resultDiv.innerHTML = html;
+  }
+
+  window.changeCabinetQty = function(productId, cabinetName, amount) {
+    const qtySpan = document.getElementById(`qty_${productId}_${cabinetName}`);
