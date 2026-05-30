@@ -16,8 +16,6 @@
     input:focus { border-color: #007bff; outline: none; }
     button.main-btn { width: 100%; padding: 14px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; margin-bottom: 12px; }
     #saveBtn { background: #28a745; }
-    #scanBtn { background: #6f42c1; }
-    #reader { width: 100%; max-width: 400px; margin: 0 auto 12px auto; border-radius: 8px; overflow: hidden; display: none; }
     #result { margin-top: 16px; font-size: 16px; line-height: 1.6; padding: 14px; border-radius: 8px; display: none; }
     .cabinet-row { background: #ffffff; border: 1px solid #e1e4e8; padding: 10px; margin-top: 10px; border-radius: 8px; }
     .qty-controls { display: flex; gap: 12px; margin-top: 8px; align-items: center; }
@@ -43,9 +41,7 @@
 
   <!-- Панель Поиска -->
   <div id="panelSearch" class="panel active">
-    <button id="scanBtn" class="main-btn">📷 Сканировать штрих-код</button>
-    <div id="reader"></div>
-    <input type="tel" id="searchId" placeholder="Или введите 6-значный код..." maxlength="6">
+    <input type="tel" id="searchId" placeholder="Введите 6-значный код..." maxlength="6">
     <button id="searchBtn" class="main-btn">Найти товар</button>
     <div id="result"></div>
     <div class="history-box" id="historyBox" style="display: none;">
@@ -65,16 +61,12 @@
   </div>
 </div>
 
-<script src="https://cloudflare.com"></script>
-
 <script>
-  // СЮДА ВСТАВЬТЕ ВАШУ ПРЯМУЮ ССЫЛКУ ИЗ FIREBASE:
-  // Пример: const BASE_URL = "https://firebaseio.com";
   const BASE_URL = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app/"; 
 
   let searchHistory = [];
-  let html5QrcodeScanner = null;
 
+  // Инициализация истории при загрузке
   loadHistory();
 
   // Переключение вкладок
@@ -90,41 +82,7 @@
   tabAdd.addEventListener('click', function() {
     tabAdd.classList.add('active'); tabSearch.classList.remove('active');
     panelAdd.classList.add('active'); panelSearch.classList.remove('active');
-    stopScanner();
   });
-
-  // Кнопка сканера
-  document.getElementById('scanBtn').addEventListener('click', function() {
-    const readerDiv = document.getElementById('reader');
-    if (readerDiv.style.display === 'block') { stopScanner(); } else { startScanner(); }
-  });
-
-  function startScanner() {
-    const readerDiv = document.getElementById('reader');
-    readerDiv.style.display = 'block';
-    document.getElementById('scanBtn').innerText = '❌ Закрыть камеру';
-    html5QrcodeScanner = new Html5Qrcode("reader");
-    html5QrcodeScanner.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 250, height: 150 } },
-      function(decodedText) {
-        let cleanCode = decodedText.trim();
-        if(cleanCode.length > 6) cleanCode = cleanCode.substring(0, 6);
-        document.getElementById('searchId').value = cleanCode;
-        stopScanner();
-        searchProduct(cleanCode);
-      },
-      function() {}
-    ).catch(function(err) { alert("Ошибка камеры: " + err); stopScanner(); });
-  }
-
-  function stopScanner() {
-    const readerDiv = document.getElementById('reader');
-    document.getElementById('scanBtn').innerText = '📷 Сканировать штрих-код';
-    if (html5QrcodeScanner) {
-      html5QrcodeScanner.stop().then(function() { html5QrcodeScanner = null; readerDiv.style.display = 'none'; }).catch(function() { readerDiv.style.display = 'none'; });
-    } else { readerDiv.style.display = 'none'; }
-  }
 
   // Логика СОХРАНЕНИЯ
   document.getElementById('saveBtn').addEventListener('click', async function() {
@@ -203,13 +161,74 @@
     }
   }
 
+  // Отрисовка карточки товара с интерактивными кнопками изменения количества
   function renderProductCard(productId, product) {
     const resultDiv = document.getElementById('result');
     let html = '<strong>Название:</strong> ' + product.name + '<br><strong>Места хранения:</strong><br>';
-    if (!product.cabinets) {
+    
+    if (!product.cabinets || Object.keys(product.cabinets).length === 0) {
       html += '<span class="error">Шкафы не указаны.</span>';
       resultDiv.innerHTML = html;
       return;
     }
+
     Object.keys(product.cabinets).forEach(function(cabinetName) {
       const currentQty = product.cabinets[cabinetName];
+      html += `
+        <div class="cabinet-row">
+          <div>📦 Шкаф: <strong>${cabinetName}</strong></div>
+          <div class="qty-controls">
+            <button class="qty-btn btn-minus" onclick="changeQty('${productId}', '${cabinetName}', -1)">-</button>
+            <div class="qty-display" id="qty-${productId}-${cabinetName}">${currentQty} шт.</div>
+            <button class="qty-btn btn-plus" onclick="changeQty('${productId}', '${cabinetName}', 1)">+</button>
+          </div>
+        </div>
+      `;
+    });
+
+    resultDiv.innerHTML = html;
+  }
+
+  // Функция изменения остатка по кнопкам прямо из поиска
+  async function changeQty(productId, cabinetName, delta) {
+    const qtyDisplay = document.getElementById(`qty-${productId}-${cabinetName}`);
+    let currentQty = parseInt(qtyDisplay.innerText, 10);
+    let newQty = currentQty + delta;
+    if (newQty < 0) newQty = 0;
+
+    qtyDisplay.innerText = "⏳...";
+
+    try {
+      const response = await fetch(`${BASE_URL}/products/${productId}/cabinets/${cabinetName}.json`, {
+        method: 'PUT',
+        body: JSON.stringify(newQty)
+      });
+
+      if (response.ok) {
+        qtyDisplay.innerText = `${newQty} шт.`;
+      } else {
+        qtyDisplay.innerText = `${currentQty} шт.`;
+        alert("Ошибка при обновлении количества");
+      }
+    } catch (error) {
+      qtyDisplay.innerText = `${currentQty} шт.`;
+      alert("Ошибка сети: " + error.message);
+    }
+  }
+
+  // Работа с историей поисковых запросов (вкладка "Недавно искали")
+  function loadHistory() {
+    const saved = localStorage.getItem('searchHistory');
+    if (saved) {
+      searchHistory = JSON.parse(saved);
+      renderHistory();
+    }
+  }
+
+  function updateHistory(id) {
+    searchHistory = searchHistory.filter(item => item !== id);
+    searchHistory.unshift(id);
+    if (searchHistory.length > 5) searchHistory.pop(); // Хранить только последние 5 кодов
+    localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
+    renderHistory();
+  }
