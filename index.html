@@ -41,6 +41,7 @@
     <button class="tab-btn" id="tabAdd">Добавить</button>
   </div>
 
+  <!-- Панель Поиска -->
   <div id="panelSearch" class="panel active">
     <button id="scanBtn" class="main-btn">📷 Сканировать штрих-код</button>
     <div id="reader"></div>
@@ -53,6 +54,7 @@
     </div>
   </div>
 
+  <!-- Панель Добавления -->
   <div id="panelAdd" class="panel">
     <input type="tel" id="addId" placeholder="Код товара (6 цифр)..." maxlength="6">
     <input type="text" id="addName" placeholder="Название товара...">
@@ -63,21 +65,22 @@
   </div>
 </div>
 
-<script src="https://gstatic.com"></script>
-<script src="https://gstatic.com"></script>
-<script src="https://unpkg.com"></script>
+<!-- Подключаем ОДНУ стабильную библиотеку для сканера штрих-кодов -->
+<script src="https://cloudflare.com"></script>
 
 <script>
-  // ВСТАВЬТЕ СЮДА ВАШУ ССЫЛКУ ИЗ FIREBASE:
-  https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app/
+  // ВСТАВЬТЕ СЮДА ТОЛЬКО ID ВАШЕГО ПРОЕКТА ИЗ ССЫЛКИ FIREBASE (например: storage-assistant-default-rtdb)
+  const FIREBASE_PROJECT_ID = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app/"; 
+  
+  // Автоматическая сборка правильного URL адреса базы данных
+  const BASE_URL = `https://${FIREBASE_PROJECT_ID}.firebaseio.com`;
 
-  firebase.initializeApp({ databaseURL: FIREBASE_DB_URL });
-  const db = firebase.database();
   let searchHistory = [];
   let html5QrcodeScanner = null;
 
   loadHistory();
 
+  // Переключение вкладок (Локальная логика, работает ВСЕГДА)
   const tabSearch = document.getElementById('tabSearch');
   const tabAdd = document.getElementById('tabAdd');
   const panelSearch = document.getElementById('panelSearch');
@@ -93,6 +96,7 @@
     stopScanner();
   });
 
+  // Логика кнопки сканера
   document.getElementById('scanBtn').addEventListener('click', () => {
     const readerDiv = document.getElementById('reader');
     if (readerDiv.style.display === 'block') { stopScanner(); } else { startScanner(); }
@@ -125,7 +129,8 @@
     } else { readerDiv.style.display = 'none'; }
   }
 
-  document.getElementById('saveBtn').addEventListener('click', () => {
+  // --- Логика СОХРАНЕНИЯ через REST API (Без библиотек Firebase) ---
+  document.getElementById('saveBtn').addEventListener('click', async () => {
     const id = document.getElementById('addId').value.trim();
     const name = document.getElementById('addName').value.trim();
     const cabinet = document.getElementById('addCabinet').value.trim().replace(/[.#$/\[\]]/g, "-");
@@ -142,25 +147,40 @@
     }
 
     statusDiv.innerText = "Сохранение...";
-    db.ref('products/' + id + '/name').set(name);
-    db.ref('products/' + id + '/cabinets/' + cabinet).set(parseInt(qty, 10), (error) => {
-      if (error) {
-        statusDiv.innerHTML = '<span class="error">Ошибка: ' + error.message + '</span>';
-      } else {
-        statusDiv.innerHTML = '<span class="success">Успешно сохранено для шкафа ' + cabinet + '!</span>';
+
+    try {
+      // Сохраняем имя товара
+      await fetch(`${BASE_URL}/products/${id}/name.json`, {
+        method: 'PUT',
+        body: JSON.stringify(name)
+      });
+
+      // Сохраняем количество в шкафу
+      const response = await fetch(`${BASE_URL}/products/${id}/cabinets/${cabinet}.json`, {
+        method: 'PUT',
+        body: JSON.stringify(parseInt(qty, 10))
+      });
+
+      if (response.ok) {
+        statusDiv.innerHTML = `<span class="success">Успешно сохранено для шкафа ${cabinet}!</span>`;
         document.getElementById('addId').value = '';
         document.getElementById('addCabinet').value = '';
         document.getElementById('addQty').value = '';
+      } else {
+        throw new Error("Ошибка сервера базы данных");
       }
-    });
+    } catch (error) {
+      statusDiv.innerHTML = `<span class="error">Ошибка сохранения: ${error.message}</span>`;
+    }
   });
 
+  // --- Логика ПОИСКА через REST API ---
   document.getElementById('searchBtn').addEventListener('click', () => {
     const id = document.getElementById('searchId').value.trim();
     searchProduct(id);
   });
 
-  function searchProduct(id) {
+  async function searchProduct(id) {
     const resultDiv = document.getElementById('result');
     resultDiv.style.display = "block";
     if (id.length !== 6 || isNaN(id)) {
@@ -170,8 +190,10 @@
     }
     resultDiv.innerText = "Загрузка...";
 
-    db.ref('products/' + id).once('value').then((snapshot) => {
-      const product = snapshot.val();
+    try {
+      const response = await fetch(`${BASE_URL}/products/${id}.json`);
+      const product = await response.json();
+
       if (product) {
         resultDiv.style.background = "#e2f0d9";
         renderProductCard(id, product);
@@ -180,7 +202,10 @@
         resultDiv.style.background = "#fce4d6";
         resultDiv.innerHTML = '<span class="error">Товар не найден.</span>';
       }
-    });
+    } catch (error) {
+      resultDiv.style.background = "#fce4d6";
+      resultDiv.innerHTML = `<span class="error">Ошибка сети: ${error.message}</span>`;
+    }
   }
 
   function renderProductCard(productId, product) {
@@ -192,20 +217,3 @@
       return;
     }
     Object.keys(product.cabinets).forEach(cabinetName => {
-      const currentQty = product.cabinets[cabinetName];
-      html += `
-        <div class="cabinet-row">
-          <strong>Шкаф:</strong> ${cabinetName}
-          <div class="qty-controls">
-            <button class="qty-btn btn-minus" onclick="changeCabinetQty('${productId}', '${cabinetName}', -1)">-1</button>
-            <span class="qty-display" id="qty_${productId}_${cabinetName}">${currentQty} шт.</span>
-            <button class="qty-btn btn-plus" onclick="changeCabinetQty('${productId}', '${cabinetName}', 1)">+1</button>
-          </div>
-        </div>
-      `;
-    });
-    resultDiv.innerHTML = html;
-  }
-
-  window.changeCabinetQty = function(productId, cabinetName, amount) {
-    const qtySpan = document.getElementById(`qty_${productId}_${cabinetName}`);
