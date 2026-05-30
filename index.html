@@ -68,7 +68,8 @@
 <script src="https://cloudflare.com"></script>
 
 <script>
-  // ВСТАВЬТЕ СЮДА ВАШУ ПРЯМУЮ ССЫЛКУ ИЗ FIREBASE:
+  // СЮДА ВСТАВЬТЕ ВАШУ ПРЯМУЮ ССЫЛКУ ИЗ FIREBASE:
+  // Пример: const BASE_URL = "https://firebaseio.com";
   const BASE_URL = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app/"; 
 
   let searchHistory = [];
@@ -82,18 +83,18 @@
   const panelSearch = document.getElementById('panelSearch');
   const panelAdd = document.getElementById('panelAdd');
 
-  tabSearch.addEventListener('click', () => {
+  tabSearch.addEventListener('click', function() {
     tabSearch.classList.add('active'); tabAdd.classList.remove('active');
     panelSearch.classList.add('active'); panelAdd.classList.remove('active');
   });
-  tabAdd.addEventListener('click', () => {
+  tabAdd.addEventListener('click', function() {
     tabAdd.classList.add('active'); tabSearch.classList.remove('active');
     panelAdd.classList.add('active'); panelSearch.classList.remove('active');
     stopScanner();
   });
 
   // Кнопка сканера
-  document.getElementById('scanBtn').addEventListener('click', () => {
+  document.getElementById('scanBtn').addEventListener('click', function() {
     const readerDiv = document.getElementById('reader');
     if (readerDiv.style.display === 'block') { stopScanner(); } else { startScanner(); }
   });
@@ -106,27 +107,27 @@
     html5QrcodeScanner.start(
       { facingMode: "environment" },
       { fps: 10, qrbox: { width: 250, height: 150 } },
-      (decodedText) => {
+      function(decodedText) {
         let cleanCode = decodedText.trim();
         if(cleanCode.length > 6) cleanCode = cleanCode.substring(0, 6);
         document.getElementById('searchId').value = cleanCode;
         stopScanner();
         searchProduct(cleanCode);
       },
-      () => {}
-    ).catch(err => { alert("Ошибка камеры: " + err); stopScanner(); });
+      function() {}
+    ).catch(function(err) { alert("Ошибка камеры: " + err); stopScanner(); });
   }
 
   function stopScanner() {
     const readerDiv = document.getElementById('reader');
     document.getElementById('scanBtn').innerText = '📷 Сканировать штрих-код';
     if (html5QrcodeScanner) {
-      html5QrcodeScanner.stop().then(() => { html5QrcodeScanner = null; readerDiv.style.display = 'none'; }).catch(() => { readerDiv.style.display = 'none'; });
+      html5QrcodeScanner.stop().then(function() { html5QrcodeScanner = null; readerDiv.style.display = 'none'; }).catch(function() { readerDiv.style.display = 'none'; });
     } else { readerDiv.style.display = 'none'; }
   }
 
   // Логика СОХРАНЕНИЯ
-  document.getElementById('saveBtn').addEventListener('click', async () => {
+  document.getElementById('saveBtn').addEventListener('click', async function() {
     const id = document.getElementById('addId').value.trim();
     const name = document.getElementById('addName').value.trim();
     const cabinet = document.getElementById('addCabinet').value.trim().replace(/[.#$/\[\]]/g, "-");
@@ -150,7 +151,7 @@
         body: JSON.stringify(name)
       });
 
-      const response = await fetch(BASE_URL + "/products/" + id + "/cabinets/" + cabinet.json, {
+      const response = await fetch(BASE_URL + "/products/" + id + "/cabinets/" + cabinet + ".json", {
         method: 'PUT',
         body: JSON.stringify(parseInt(qty, 10))
       });
@@ -169,7 +170,7 @@
   });
 
   // Логика ПОИСКА
-  document.getElementById('searchBtn').addEventListener('click', () => {
+  document.getElementById('searchBtn').addEventListener('click', function() {
     const id = document.getElementById('searchId').value.trim();
     searchProduct(id);
   });
@@ -210,5 +211,5 @@
       resultDiv.innerHTML = html;
       return;
     }
-    Object.keys(product.cabinets).forEach(cabinetName => {
+    Object.keys(product.cabinets).forEach(function(cabinetName) {
       const currentQty = product.cabinets[cabinetName];
