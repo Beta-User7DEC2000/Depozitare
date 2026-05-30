@@ -64,171 +64,189 @@
 <script>
   const BASE_URL = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app/"; 
 
-  let searchHistory = [];
+let searchHistory = [];
 
-  // Инициализация истории при загрузке
-  loadHistory();
+// Инициализация истории при загрузке страницы
+loadHistory();
 
-  // Переключение вкладок
-  const tabSearch = document.getElementById('tabSearch');
-  const tabAdd = document.getElementById('tabAdd');
-  const panelSearch = document.getElementById('panelSearch');
-  const panelAdd = document.getElementById('panelAdd');
+// Переключение вкладок
+const tabSearch = document.getElementById('tabSearch');
+const tabAdd = document.getElementById('tabAdd');
+const panelSearch = document.getElementById('panelSearch');
+const panelAdd = document.getElementById('panelAdd');
 
-  tabSearch.addEventListener('click', function() {
-    tabSearch.classList.add('active'); tabAdd.classList.remove('active');
-    panelSearch.classList.add('active'); panelAdd.classList.remove('active');
-  });
-  tabAdd.addEventListener('click', function() {
-    tabAdd.classList.add('active'); tabSearch.classList.remove('active');
-    panelAdd.classList.add('active'); panelSearch.classList.remove('active');
-  });
+tabSearch.addEventListener('click', function() {
+  tabSearch.classList.add('active'); tabAdd.classList.remove('active');
+  panelSearch.classList.add('active'); panelAdd.classList.remove('active');
+});
+tabAdd.addEventListener('click', function() {
+  tabAdd.classList.add('active'); tabSearch.classList.remove('active');
+  panelAdd.classList.add('active'); panelSearch.classList.remove('active');
+});
 
-  // Логика СОХРАНЕНИЯ
-  document.getElementById('saveBtn').addEventListener('click', async function() {
-    const id = document.getElementById('addId').value.trim();
-    const name = document.getElementById('addName').value.trim();
-    const cabinet = document.getElementById('addCabinet').value.trim().replace(/[.#$/\[\]]/g, "-");
-    const qty = document.getElementById('addQty').value.trim();
-    const statusDiv = document.getElementById('addStatus');
+// Логика СОХРАНЕНИЯ
+document.getElementById('saveBtn').addEventListener('click', async function() {
+  const id = document.getElementById('addId').value.trim();
+  const name = document.getElementById('addName').value.trim();
+  const cabinet = document.getElementById('addCabinet').value.trim().replace(/[.#$/\[\]]/g, "-");
+  const qty = document.getElementById('addQty').value.trim();
+  const statusDiv = document.getElementById('addStatus');
 
-    if (id.length !== 6 || isNaN(id)) {
-      statusDiv.innerHTML = '<span class="error">Код должен быть из 6 цифр!</span>';
-      return;
-    }
-    if (!name || !cabinet || !qty) {
-      statusDiv.innerHTML = '<span class="error">Заполните все поля!</span>';
-      return;
-    }
-
-    statusDiv.innerText = "Сохранение...";
-
-    try {
-      await fetch(BASE_URL + "/products/" + id + "/name.json", {
-        method: 'PUT',
-        body: JSON.stringify(name)
-      });
-
-      const response = await fetch(BASE_URL + "/products/" + id + "/cabinets/" + cabinet + ".json", {
-        method: 'PUT',
-        body: JSON.stringify(parseInt(qty, 10))
-      });
-
-      if (response.ok) {
-        statusDiv.innerHTML = '<span class="success">Успешно сохранено для шкафа ' + cabinet + '!</span>';
-        document.getElementById('addId').value = '';
-        document.getElementById('addCabinet').value = '';
-        document.getElementById('addQty').value = '';
-      } else {
-        throw new Error("Ошибка сервера базы данных");
-      }
-    } catch (error) {
-      statusDiv.innerHTML = '<span class="error">Ошибка сохранения: ' + error.message + '</span>';
-    }
-  });
-
-  // Логика ПОИСКА
-  document.getElementById('searchBtn').addEventListener('click', function() {
-    const id = document.getElementById('searchId').value.trim();
-    searchProduct(id);
-  });
-
-  async function searchProduct(id) {
-    const resultDiv = document.getElementById('result');
-    resultDiv.style.display = "block";
-    if (id.length !== 6 || isNaN(id)) {
-      resultDiv.style.background = "#fce4d6";
-      resultDiv.innerHTML = '<span class="error">Введите 6 цифр!</span>';
-      return;
-    }
-    resultDiv.innerText = "Загрузка...";
-
-    try {
-      const response = await fetch(BASE_URL + "/products/" + id + ".json");
-      const product = await response.json();
-
-      if (product) {
-        resultDiv.style.background = "#e2f0d9";
-        renderProductCard(id, product);
-        updateHistory(id);
-      } else {
-        resultDiv.style.background = "#fce4d6";
-        resultDiv.innerHTML = '<span class="error">Товар не найден.</span>';
-      }
-    } catch (error) {
-      resultDiv.style.background = "#fce4d6";
-      resultDiv.innerHTML = '<span class="error">Ошибка сети: ' + error.message + '</span>';
-    }
+  if (id.length !== 6 || isNaN(id)) {
+    statusDiv.innerHTML = '<span class="error">Код должен быть из 6 цифр!</span>';
+    return;
+  }
+  if (!name || !cabinet || !qty) {
+    statusDiv.innerHTML = '<span class="error">Заполните все поля!</span>';
+    return;
   }
 
-  // Отрисовка карточки товара с интерактивными кнопками изменения количества
-  function renderProductCard(productId, product) {
-    const resultDiv = document.getElementById('result');
-    let html = '<strong>Название:</strong> ' + product.name + '<br><strong>Места хранения:</strong><br>';
-    
-    if (!product.cabinets || Object.keys(product.cabinets).length === 0) {
-      html += '<span class="error">Шкафы не указаны.</span>';
-      resultDiv.innerHTML = html;
-      return;
-    }
+  statusDiv.innerText = "Сохранение...";
 
-    Object.keys(product.cabinets).forEach(function(cabinetName) {
-      const currentQty = product.cabinets[cabinetName];
-      html += `
-        <div class="cabinet-row">
-          <div>📦 Шкаф: <strong>${cabinetName}</strong></div>
-          <div class="qty-controls">
-            <button class="qty-btn btn-minus" onclick="changeQty('${productId}', '${cabinetName}', -1)">-</button>
-            <div class="qty-display" id="qty-${productId}-${cabinetName}">${currentQty} шт.</div>
-            <button class="qty-btn btn-plus" onclick="changeQty('${productId}', '${cabinetName}', 1)">+</button>
-          </div>
-        </div>
-      `;
+  try {
+    await fetch(BASE_URL + "/products/" + id + "/name.json", {
+      method: 'PUT',
+      body: JSON.stringify(name)
     });
 
+    const response = await fetch(BASE_URL + "/products/" + id + "/cabinets/" + cabinet + ".json", {
+      method: 'PUT',
+      body: JSON.stringify(parseInt(qty, 10))
+    });
+
+    if (response.ok) {
+      statusDiv.innerHTML = '<span class="success">Успешно сохранено для шкафа ' + cabinet + '!</span>';
+      document.getElementById('addId').value = '';
+      document.getElementById('addCabinet').value = '';
+      document.getElementById('addQty').value = '';
+    } else {
+      throw new Error("Ошибка сервера базы данных");
+    }
+  } catch (error) {
+    statusDiv.innerHTML = '<span class="error">Ошибка сохранения: ' + error.message + '</span>';
+  }
+});
+
+// Логика ПОИСКА
+document.getElementById('searchBtn').addEventListener('click', function() {
+  const id = document.getElementById('searchId').value.trim();
+  searchProduct(id);
+});
+
+async function searchProduct(id) {
+  const resultDiv = document.getElementById('result');
+  resultDiv.style.display = "block";
+  if (id.length !== 6 || isNaN(id)) {
+    resultDiv.style.background = "#fce4d6";
+    resultDiv.innerHTML = '<span class="error">Введите 6 цифр!</span>';
+    return;
+  }
+  resultDiv.innerText = "Загрузка...";
+
+  try {
+    const response = await fetch(BASE_URL + "/products/" + id + ".json");
+    const product = await response.json();
+
+    if (product) {
+      resultDiv.style.background = "#e2f0d9";
+      renderProductCard(id, product);
+      updateHistory(id);
+    } else {
+      resultDiv.style.background = "#fce4d6";
+      resultDiv.innerHTML = '<span class="error">Товар не найден.</span>';
+    }
+  } catch (error) {
+    resultDiv.style.background = "#fce4d6";
+    resultDiv.innerHTML = '<span class="error">Ошибка сети: ' + error.message + '</span>';
+  }
+}
+
+// Отрисовка карточки товара
+function renderProductCard(productId, product) {
+  const resultDiv = document.getElementById('result');
+  let html = '<strong>Название:</strong> ' + product.name + '<br><strong>Места хранения:</strong><br>';
+  
+  if (!product.cabinets || Object.keys(product.cabinets).length === 0) {
+    html += '<span class="error">Шкафы не указаны.</span>';
     resultDiv.innerHTML = html;
+    return;
   }
 
-  // Функция изменения остатка по кнопкам прямо из поиска
-  async function changeQty(productId, cabinetName, delta) {
-    const qtyDisplay = document.getElementById(`qty-${productId}-${cabinetName}`);
-    let currentQty = parseInt(qtyDisplay.innerText, 10);
-    let newQty = currentQty + delta;
-    if (newQty < 0) newQty = 0;
+  Object.keys(product.cabinets).forEach(function(cabinetName) {
+    const currentQty = product.cabinets[cabinetName];
+    html += `
+      <div class="cabinet-row">
+        <div>📦 Шкаф: <strong>${cabinetName}</strong></div>
+        <div class="qty-controls">
+          <button class="qty-btn btn-minus" onclick="window.changeQty('${productId}', '${cabinetName}', -1)">-</button>
+          <div class="qty-display" id="qty-${productId}-${cabinetName}">${currentQty} шт.</div>
+          <button class="qty-btn btn-plus" onclick="window.changeQty('${productId}', '${cabinetName}', 1)">+</button>
+        </div>
+      </div>
+    `;
+  });
 
-    qtyDisplay.innerText = "⏳...";
+  resultDiv.innerHTML = html;
+}
 
-    try {
-      const response = await fetch(`${BASE_URL}/products/${productId}/cabinets/${cabinetName}.json`, {
-        method: 'PUT',
-        body: JSON.stringify(newQty)
-      });
+// Функция изменения остатка (явно привязана к window для работы из onclick)
+window.changeQty = async function(productId, cabinetName, delta) {
+  const qtyDisplay = document.getElementById(`qty-${productId}-${cabinetName}`);
+  let currentQty = parseInt(qtyDisplay.innerText, 10);
+  let newQty = currentQty + delta;
+  if (newQty < 0) newQty = 0;
 
-      if (response.ok) {
-        qtyDisplay.innerText = `${newQty} шт.`;
-      } else {
-        qtyDisplay.innerText = `${currentQty} шт.`;
-        alert("Ошибка при обновлении количества");
-      }
-    } catch (error) {
+  qtyDisplay.innerText = "⏳...";
+
+  try {
+    const response = await fetch(`${BASE_URL}/products/${productId}/cabinets/${cabinetName}.json`, {
+      method: 'PUT',
+      body: JSON.stringify(newQty)
+    });
+
+    if (response.ok) {
+      qtyDisplay.innerText = `${newQty} шт.`;
+    } else {
       qtyDisplay.innerText = `${currentQty} шт.`;
-      alert("Ошибка сети: " + error.message);
+      alert("Ошибка при обновлении количества");
     }
+  } catch (error) {
+    qtyDisplay.innerText = `${currentQty} шт.`;
+    alert("Ошибка сети: " + error.message);
+  }
+};
+
+// Работа с историей поисковых запросов
+function loadHistory() {
+  const saved = localStorage.getItem('searchHistory');
+  if (saved) {
+    searchHistory = JSON.parse(saved);
+  }
+  renderHistory();
+}
+
+function updateHistory(id) {
+  searchHistory = searchHistory.filter(item => item !== id);
+  searchHistory.unshift(id);
+  if (searchHistory.length > 5) searchHistory.pop(); // Хранить только последние 5 кодов
+  localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
+  renderHistory();
+}
+
+// ДОБАВЛЕННАЯ ФУНКЦИЯ: Отрисовка списка истории в UI
+function renderHistory() {
+  const historyDiv = document.getElementById('historyList'); 
+  if (!historyDiv) return; // Защита на случай, если блока в HTML нет
+
+  if (searchHistory.length === 0) {
+    historyDiv.innerHTML = '<em>История пуста</em>';
+    return;
   }
 
-  // Работа с историей поисковых запросов (вкладка "Недавно искали")
-  function loadHistory() {
-    const saved = localStorage.getItem('searchHistory');
-    if (saved) {
-      searchHistory = JSON.parse(saved);
-      renderHistory();
-    }
-  }
-
-  function updateHistory(id) {
-    searchHistory = searchHistory.filter(item => item !== id);
-    searchHistory.unshift(id);
-    if (searchHistory.length > 5) searchHistory.pop(); // Хранить только последние 5 кодов
-    localStorage.setItem('searchHistory', JSON.stringify(searchHistory));
-    renderHistory();
-  }
+  let html = '<ul>';
+  searchHistory.forEach(id => {
+    html += `<li><a href="#" onclick="document.getElementById('searchId').value='${id}'; searchProduct('${id}'); return false;">${id}</a></li>`;
+  });
+  html += '</ul>';
+  historyDiv.innerHTML = html;
+}
