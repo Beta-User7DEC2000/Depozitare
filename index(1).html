@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Товарный Ассистент</title>
+  <style>
+    :root {
+      --bg: #121212;
+      --surface: #1e1e1e;
+      --surface2: #2a2a2a;
+      --border: #333;
+      --text: #e0e0e0;
+      --text-muted: #888;
+      --blue: #4a9eff;
+      --green: #4caf50;
+      --red: #f44336;
+      --orange: #ff9800;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; padding: 16px; margin: 0; background: var(--bg); color: var(--text); }
+    .container { max-width: 500px; margin: 0 auto; background: var(--surface); padding: 16px; border-radius: 12px; border: 1px solid var(--border); }
+    .tabs { display: flex; margin-bottom: 16px; border-bottom: 2px solid var(--border); gap: 4px; }
+    .tab-btn { flex: 1; padding: 10px 4px; background: none; border: none; cursor: pointer; font-size: 13px; color: var(--text-muted); font-weight: 500; transition: 0.2s; border-radius: 6px 6px 0 0; }
+    .tab-btn.active { color: var(--blue); border-bottom: 3px solid var(--blue); font-weight: bold; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    input { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 16px; background: var(--surface2); color: var(--text); }
+    input::placeholder { color: var(--text-muted); }
+    input:focus { border-color: var(--blue); outline: none; }
+    button.main-btn { width: 100%; padding: 14px; background: var(--blue); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; margin-bottom: 12px; }
+    #saveBtn { background: var(--green); }
+    #result { margin-top: 16px; font-size: 16px; line-height: 1.6; padding: 14px; border-radius: 8px; display: none; }
+    .cabinet-row { background: var(--surface2); border: 1px solid var(--border); padding: 10px; margin-top: 10px; border-radius: 8px; }
+    .qty-controls { display: flex; gap: 12px; margin-top: 8px; align-items: center; }
+    .qty-btn { flex: 1; padding: 10px; border: none; border-radius: 8px; cursor: pointer; font-size: 18px; font-weight: bold; color: white; }
+    .btn-minus { background: var(--red); }
+    .btn-plus { background: var(--green); }
+    .qty-display { font-size: 16px; font-weight: bold; min-width: 60px; text-align: center; color: var(--text); }
+    .error { color: var(--red); font-weight: bold; }
+    .success { color: var(--green); font-weight: bold; }
+
+    /* Стили для панели редактирования */
+    .edit-product-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+    .edit-product-name { font-size: 16px; font-weight: bold; margin-bottom: 10px; color: var(--text); }
+    .edit-cabinet-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px; background: var(--surface); border-radius: 8px; border: 1px solid var(--border); }
+    .edit-cabinet-name { flex: 1; font-size: 14px; color: var(--text); }
+    .edit-qty-input { width: 70px; padding: 6px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; background: var(--surface2); color: var(--text); text-align: center; }
+    .btn-save-edit { padding: 6px 12px; background: var(--blue); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: bold; }
+    .btn-del-cabinet { padding: 6px 10px; background: var(--red); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .btn-del-product { width: 100%; padding: 12px; background: #3a1a1a; color: var(--red); border: 1px solid var(--red); border-radius: 8px; cursor: pointer; font-size: 15px; font-weight: bold; margin-top: 10px; }
+    .edit-status { font-size: 13px; margin-top: 6px; min-height: 18px; }
+    .add-cabinet-section { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 10px; }
+    .add-cabinet-section h4 { margin: 0 0 8px 0; font-size: 13px; color: var(--text-muted); }
+    .add-cab-row { display: flex; gap: 8px; }
+    .add-cab-row input { margin-bottom: 0; flex: 1; padding: 8px; font-size: 14px; }
+    .btn-add-cabinet { padding: 8px 14px; background: var(--green); color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: bold; white-space: nowrap; }
+
+    /* История — вкладка */
+    .history-section { margin-bottom: 20px; }
+    .history-section-title { font-size: 13px; color: var(--text-muted); font-weight: bold; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .history-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; margin: 0 0 4px 0; list-style: none; }
+    .history-item { background: var(--surface2); border: 1px solid var(--border); padding: 6px 12px; border-radius: 20px; font-size: 14px; cursor: pointer; color: var(--text); }
+    .history-item:hover { border-color: var(--blue); color: var(--blue); }
+    .history-empty { color: var(--text-muted); font-size: 14px; font-style: italic; }
+
+    /* Общая история */
+    .shared-history-title { font-size: 13px; color: var(--text-muted); font-weight: bold; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .shared-history-title .live-dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; display: inline-block; animation: pulse 1.5s infinite; flex-shrink: 0; }
+    @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+    .shared-history-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .shared-history-table th { text-align: left; color: var(--text-muted); padding: 4px 6px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 12px; }
+    .shared-history-table td { padding: 6px 6px; border-bottom: 1px solid #222; color: var(--text); }
+    .shared-history-table tr:last-child td { border-bottom: none; }
+    .shared-history-table td:first-child { color: var(--blue); font-weight: bold; cursor: pointer; }
+    .shared-history-table td:first-child:hover { text-decoration: underline; }
+    .shared-history-table td.dt { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+
+    /* Поиск шкафа */
+    .cabinet-search-result { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-top: 16px; display: none; }
+    .cabinet-search-title { font-size: 16px; font-weight: bold; margin-bottom: 12px; color: var(--blue); }
+    .cabinet-product-row { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .cabinet-product-row:last-child { border-bottom: none; }
+    .cabinet-product-code { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 13px; font-family: monospace; color: var(--orange); cursor: pointer; white-space: nowrap; }
+    .cabinet-product-code:hover { border-color: var(--blue); color: var(--blue); }
+    .cabinet-product-name { flex: 1; font-size: 14px; color: var(--text); }
+    .cabinet-product-qty { font-size: 14px; font-weight: bold; color: var(--green); white-space: nowrap; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="tabs">
+    <button class="tab-btn active" id="tabSearch">🔍 Поиск</button>
+    <button class="tab-btn" id="tabAdd">➕ Добавить</button>
+    <button class="tab-btn" id="tabEdit">✏️ Изменить</button>
+    <button class="tab-btn" id="tabHistory">📋 История</button>
+  </div>
+
+  <!-- Панель Поиска -->
+  <div id="panelSearch" class="panel active">
+    <input type="text" id="searchId" placeholder="Код товара (6 цифр) или номер шкафа..." maxlength="20">
+    <button id="searchBtn" class="main-btn">Найти</button>
+    <div id="result"></div>
+    <div id="cabinetResult" class="cabinet-search-result"></div>
+  </div>
+
+  <!-- Панель Добавления -->
+  <div id="panelAdd" class="panel">
+    <input type="tel" id="addId" placeholder="Код товара (6 цифр)..." maxlength="6">
+    <input type="text" id="addName" placeholder="Название товара...">
+    <input type="text" id="addCabinet" placeholder="Номер шкафа (например: А-3)...">
+    <input type="number" id="addQty" placeholder="Количество в этом шкафу..." min="0">
+    <button id="saveBtn" class="main-btn">Сохранить в облако</button>
+    <div id="addStatus" style="margin-top: 8px; font-size: 14px;"></div>
+  </div>
+
+  <!-- Панель Редактирования -->
+  <div id="panelEdit" class="panel">
+    <input type="tel" id="editSearchId" placeholder="Введите 6-значный код для изменения..." maxlength="6">
+    <button id="editSearchBtn" class="main-btn" style="background: var(--orange);">Загрузить товар</button>
+    <div id="editResult"></div>
+  </div>
+
+  <!-- Панель Истории -->
+  <div id="panelHistory" class="panel">
+    <div class="history-section">
+      <div class="history-section-title">Мои последние поиски</div>
+      <ul class="history-list" id="historyList"><li class="history-empty">Ничего нет</li></ul>
+    </div>
+
+    <div>
+      <div class="shared-history-title">
+        <span class="live-dot"></span> Общая история поиска
+      </div>
+      <table class="shared-history-table">
+        <thead>
+          <tr>
+            <th>Код</th>
+            <th>Товар</th>
+            <th>Действие</th>
+            <th>Польз.</th>
+            <th>Время (MD)</th>
+          </tr>
+        </thead>
+        <tbody id="sharedHistoryBody"></tbody>
+      </table>
+      <div id="sharedHistoryEmpty" style="color:var(--text-muted);font-size:14px;font-style:italic;padding:8px 0;display:none;">История пуста</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const BASE_URL = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app";
+  const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+  // Уникальный ID пользователя
+  function getUserId() {
+    let uid = localStorage.getItem('userId');
+    if (!uid) {
+      uid = 'u' + Math.random().toString(36).slice(2,7).toUpperCase();
+      localStorage.setItem('userId', uid);
+    }
+    return uid;
+  }
+  const MY_USER_ID = getUserId();
+
+  // ===== ЛОКАЛЬНАЯ ИСТОРИЯ с авто-удалением через 1 месяц =====
+  // Формат: [{id, ts}, ...]
+  let searchHistory = [];
+  loadHistory();
+
+  function loadHistory() {
+    try {
+      const s = localStorage.getItem('searchHistoryV2');
+      if (s) {
+        const raw = JSON.parse(s);
+        const now = Date.now();
+        // Фильтруем старше 1 месяца
+        searchHistory = raw.filter(function(i) { return (now - (i.ts || 0)) < ONE_MONTH_MS; });
+        // Если что-то удалилось — сохраняем обратно
+        if (searchHistory.length !== raw.length) {
+          saveHistoryToStorage();
+        }
+      }
+    } catch(e) { searchHistory = []; }
+    renderHistory();
+  }
+
+  function saveHistoryToStorage() {
+    try { localStorage.setItem('searchHistoryV2', JSON.stringify(searchHistory)); } catch(e) {}
+  }
+
+  function updateHistory(id, productName, action) {
+    const now = Date.now();
+    // Убираем дубликат если есть
+    searchHistory = searchHistory.filter(function(i) { return i.id !== id; });
+    searchHistory.unshift({ id: id, ts: now });
+    if (searchHistory.length > 10) searchHistory.pop();
+    saveHistoryToStorage();
+    renderHistory();
+    saveToSharedHistory(id, productName, action || '🔍 Поиск');
+  }
+
+  function renderHistory() {
+    const list = document.getElementById('historyList');
+    if (!list) return;
+    if (searchHistory.length === 0) {
+      list.innerHTML = '<li class="history-empty">Ничего нет</li>';
+      return;
+    }
+    list.innerHTML = '';
+    searchHistory.forEach(function(item) {
+      const id = item.id || item; // поддержка старого формата
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.className = 'history-item';
+      btn.innerText = id;
+      btn.addEventListener('click', function() {
+        document.getElementById('searchId').value = id;
+        // Переходим на вкладку поиска
+        switchTab('Search');
+        searchProduct(id);
+      });
+      li.appendChild(btn);
+      list.appendChild(li);
+    });
+  }
+
+  // Переключение вкладок
+  function switchTab(name) {
+    ['Search','Add','Edit','History'].forEach(function(n) {
+      document.getElementById('tab'+n).classList.remove('active');
+      document.getElementById('panel'+n).classList.remove('active');
+    });
+    document.getElementById('tab'+name).classList.add('active');
+    document.getElementById('panel'+name).classList.add('active');
+    if (name === 'History') {
+      loadSharedHistory();
+    }
+  }
+
+  ['Search','Add','Edit','History'].forEach(function(name) {
+    document.getElementById('tab'+name).addEventListener('click', function() {
+      switchTab(name);
+    });
+  });
+
+  // ===== ПОИСК =====
+  document.getElementById('searchBtn').addEventListener('click', function() {
+    handleSearch(document.getElementById('searchId').value.trim());
+  });
+  document.getElementById('searchId').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') handleSearch(this.value.trim());
+  });
+
+  function handleSearch(val) {
+    if (!val) return;
+    // Если ровно 6 цифр — поиск по коду товара
+    if (/^\d{6}$/.test(val)) {
+      document.getElementById('cabinetResult').style.display = 'none';
+      searchProduct(val);
+    } else {
+      // Иначе — поиск по шкафу
+      document.getElementById('result').style.display = 'none';
+      searchByCabinet(val);
+    }
+  }
+
+  async function searchProduct(id) {
+    const resultDiv = document.getElementById('result');
+    resultDiv.style.display = "block";
+    if (!/^\d{6}$/.test(id)) {
+      resultDiv.style.background = "#3a1a1a";
+      resultDiv.innerHTML = '<span class="error">Введите 6 цифр!</span>';
+      return;
+    }
+    resultDiv.style.background = "var(--surface2)";
+    resultDiv.innerText = "Загрузка...";
+    try {
+      const response = await fetch(BASE_URL + "/products/" + id + ".json");
+      const product = await response.json();
+      if (product && product.name) {
+        resultDiv.style.background = "#1a2e1a";
+        window._currentProductName = product.name;
+        window._currentProductId = id;
+        renderProductCard(id, product);
+        updateHistory(id, product.name);
+      } else {
+        resultDiv.style.background = "#3a1a1a";
+        resultDiv.innerHTML = '<span class="error">Товар не найден.</span>';
+      }
+    } catch (error) {
+      resultDiv.style.background = "#3a1a1a";
+      resultDiv.innerHTML = '<span class="error">Ошибка сети: ' + error.message + '</span>';
+    }
+  }
+
+  // ===== ПОИСК ПО ШКАФУ =====
+  async function searchByCabinet(cabinetName) {
+    const cabDiv = document.getElementById('cabinetResult');
+    cabDiv.style.display = 'block';
+    cabDiv.innerHTML = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + '</div><div style="color:var(--text-muted)">Загрузка...</div>';
+
+    try {
+      const response = await fetch(BASE_URL + "/products.json");
+      const allProducts = await response.json();
+
+      if (!allProducts || typeof allProducts !== 'object') {
+        cabDiv.innerHTML = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + '</div><span class="error">Нет данных.</span>';
+        return;
+      }
+
+      // Ищем совпадения по шкафу (нечувствительно к регистру)
+      const cabLower = cabinetName.toLowerCase();
+      const found = [];
+      Object.keys(allProducts).forEach(function(productId) {
+        const product = allProducts[productId];
+        if (!product || !product.cabinets) return;
+        Object.keys(product.cabinets).forEach(function(cab) {
+          if (cab.toLowerCase() === cabLower) {
+            found.push({
+              id: productId,
+              name: product.name || '—',
+              qty: product.cabinets[cab]
+            });
+          }
+        });
+      });
+
+      if (found.length === 0) {
+        cabDiv.innerHTML = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + '</div><span class="error">Товаров в этом шкафу не найдено.</span>';
+        return;
+      }
+
+      // Сортируем по коду
+      found.sort(function(a, b) { return a.id.localeCompare(b.id); });
+
+      let html = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + ' <span style="color:var(--text-muted);font-size:13px;font-weight:normal;">— ' + found.length + ' товаров</span></div>';
+      found.forEach(function(item) {
+        html += '<div class="cabinet-product-row">' +
+          '<span class="cabinet-product-code" onclick="goToProduct(\'' + item.id + '\')" title="Нажмите для поиска">' + item.id + '</span>' +
+          '<span class="cabinet-product-name">' + item.name + '</span>' +
+          '<span class="cabinet-product-qty">' + item.qty + ' шт.</span>' +
+        '</div>';
+      });
+      cabDiv.innerHTML = html;
+    } catch(e) {
+      cabDiv.innerHTML = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + '</div><span class="error">Ошибка сети: ' + e.message + '</span>';
+    }
+  }
+
+  window.goToProduct = function(id) {
+    document.getElementById('searchId').value = id;
+    document.getElementById('cabinetResult').style.display = 'none';
+    searchProduct(id);
+  };
+
+  function renderProductCard(productId, product) {
+    const resultDiv = document.getElementById('result');
+    let html = '<strong>Название:</strong> ' + product.name + '<br><strong>Места хранения:</strong><br>';
+    if (!product.cabinets || Object.keys(product.cabinets).length === 0) {
+      html += '<span class="error">Шкафы не указаны.</span>';
+      resultDiv.innerHTML = html;
+      return;
+    }
+    Object.keys(product.cabinets).forEach(function(cabinetName) {
+      const currentQty = product.cabinets[cabinetName];
+      const safeId = productId + '-' + cabinetName.replace(/[^a-zA-Z0-9]/g, '_');
+      html += '<div class="cabinet-row">' +
+        '<div>📦 Шкаф: <strong>' + cabinetName + '</strong></div>' +
+        '<div class="qty-controls">' +
+          '<button class="qty-btn btn-minus" onclick="changeQty(\'' + productId + '\',\'' + cabinetName + '\',-1)">−</button>' +
+          '<div class="qty-display" id="qty-' + safeId + '">' + currentQty + ' шт.</div>' +
+          '<button class="qty-btn btn-plus" onclick="changeQty(\'' + productId + '\',\'' + cabinetName + '\',1)">+</button>' +
+        '</div></div>';
+    });
+    resultDiv.innerHTML = html;
+  }
+
+  window.changeQty = async function(productId, cabinetName, delta) {
+    const safeId = productId + '-' + cabinetName.replace(/[^a-zA-Z0-9]/g, '_');
+    const qtyDisplay = document.getElementById('qty-' + safeId);
+    let currentQty = parseInt(qtyDisplay.innerText, 10);
+    let newQty = Math.max(0, currentQty + delta);
+    qtyDisplay.innerText = "⏳";
+    try {
+      const response = await fetch(BASE_URL + "/products/" + productId + "/cabinets/" + cabinetName + ".json", {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newQty)
+      });
+      if (response.ok) {
+        qtyDisplay.innerText = newQty + ' шт.';
+        const sign = delta > 0 ? '+' : '';
+        const productName = window._currentProductName || '';
+        saveToSharedHistory(productId, productName, sign + delta + ' шт. (' + cabinetName + ')');
+      } else {
+        qtyDisplay.innerText = currentQty + ' шт.';
+        alert("Ошибка при обновлении");
+      }
+    } catch (error) {
+      qtyDisplay.innerText = currentQty + ' шт.';
+      alert("Ошибка сети: " + error.message);
+    }
+  };
+
+  // ===== ДОБАВИТЬ =====
+  document.getElementById('saveBtn').addEventListener('click', async function() {
+    const id = document.getElementById('addId').value.trim();
+    const name = document.getElementById('addName').value.trim();
+    const cabinet = document.getElementById('addCabinet').value.trim().replace(/[.#$\/\[\]]/g, "-");
+    const qty = document.getElementById('addQty').value.trim();
+    const statusDiv = document.getElementById('addStatus');
+    if (id.length !== 6 || isNaN(id)) { statusDiv.innerHTML = '<span class="error">Код должен быть из 6 цифр!</span>'; return; }
+    if (!name || !cabinet || !qty) { statusDiv.innerHTML = '<span class="error">Заполните все поля!</span>'; return; }
+    statusDiv.innerText = "Сохранение...";
+    try {
+      await fetch(BASE_URL + "/products/" + id + "/name.json", { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(name) });
+      const response = await fetch(BASE_URL + "/products/" + id + "/cabinets/" + cabinet + ".json", { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(parseInt(qty, 10)) });
+      if (response.ok) {
+        statusDiv.innerHTML = '<span class="success">✅ Сохранено! Шкаф: ' + cabinet + '</span>';
+        document.getElementById('addId').value = '';
+        document.getElementById('addCabinet').value = '';
+        document.getElementById('addQty').value = '';
+      } else throw new Error("Ошибка сервера");
+    } catch (error) {
+      statusDiv.innerHTML = '<span class="error">Ошибка: ' + error.message + '</span>';
+    }
+  });
+
+  // ===== РЕДАКТИРОВАНИЕ =====
+  document.getElementById('editSearchBtn').addEventListener('click', function() {
+    loadProductForEdit(document.getElementById('editSearchId').value.trim());
+  });
+  document.getElementById('editSearchId').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') loadProductForEdit(this.value.trim());
+  });
+
+  async function loadProductForEdit(id) {
+    const resultDiv = document.getElementById('editResult');
+    if (id.length !== 6 || isNaN(id)) {
+      resultDiv.innerHTML = '<span class="error">Введите 6 цифр!</span>';
+      return;
+    }
+    resultDiv.innerHTML = '<span style="color:var(--text-muted)">Загрузка...</span>';
+    try {
+      const response = await fetch(BASE_URL + "/products/" + id + ".json");
+      const product = await response.json();
+      if (product && product.name) {
+        renderEditCard(id, product);
+      } else {
+        resultDiv.innerHTML = '<span class="error">Товар не найден.</span>';
+      }
+    } catch (error) {
+      resultDiv.innerHTML = '<span class="error">Ошибка сети: ' + error.message + '</span>';
+    }
+  }
+
+  function renderEditCard(productId, product) {
+    const resultDiv = document.getElementById('editResult');
+    const cabinets = product.cabinets || {};
+
+    let cabHtml = '';
+    Object.keys(cabinets).forEach(function(cabName) {
+      const safeKey = cabName.replace(/[^a-zA-Z0-9]/g, '_');
+      cabHtml += '<div class="edit-cabinet-row" id="cabrow-' + safeKey + '">' +
+        '<span class="edit-cabinet-name">📦 ' + cabName + '</span>' +
+        '<input class="edit-qty-input" type="number" id="editqty-' + safeKey + '" value="' + cabinets[cabName] + '" min="0">' +
+        '<button class="btn-save-edit" onclick="saveCabinetQty(\'' + productId + '\',\'' + cabName + '\')">💾</button>' +
+        '<button class="btn-del-cabinet" onclick="deleteCabinet(\'' + productId + '\',\'' + cabName + '\')">🗑</button>' +
+      '</div><div class="edit-status" id="editstatus-' + safeKey + '"></div>';
+    });
+
+    resultDiv.innerHTML = '<div class="edit-product-card">' +
+      '<div class="edit-product-name">📋 ' + product.name + ' <span style="color:var(--text-muted);font-size:13px;">#' + productId + '</span></div>' +
+      '<strong style="font-size:13px;color:var(--text-muted);">Шкафы:</strong>' +
+      cabHtml +
+      '<div class="add-cabinet-section">' +
+        '<h4>➕ Добавить шкаф</h4>' +
+        '<div class="add-cab-row">' +
+          '<input type="text" id="newCabName-' + productId + '" placeholder="Шкаф (А-3)">' +
+          '<input type="number" id="newCabQty-' + productId + '" placeholder="Кол-во" min="0">' +
+          '<button class="btn-add-cabinet" onclick="addCabinet(\'' + productId + '\')">Добавить</button>' +
+        '</div>' +
+        '<div class="edit-status" id="addcabstatus-' + productId + '"></div>' +
+      '</div>' +
+      '<button class="btn-del-product" onclick="deleteProduct(\'' + productId + '\')">🗑 Удалить весь товар</button>' +
+    '</div>';
+  }
+
+  window.saveCabinetQty = async function(productId, cabName) {
+    const safeKey = cabName.replace(/[^a-zA-Z0-9]/g, '_');
+    const newQty = parseInt(document.getElementById('editqty-' + safeKey).value, 10);
+    const statusDiv = document.getElementById('editstatus-' + safeKey);
+    statusDiv.innerHTML = '<span style="color:var(--text-muted)">Сохранение...</span>';
+    try {
+      const r = await fetch(BASE_URL + "/products/" + productId + "/cabinets/" + cabName + ".json", {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(newQty)
+      });
+      statusDiv.innerHTML = r.ok ? '<span class="success">✅ Сохранено</span>' : '<span class="error">Ошибка!</span>';
+    } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка сети</span>'; }
+  };
+
+  window.deleteCabinet = async function(productId, cabName) {
+    if (!confirm('Удалить шкаф "' + cabName + '"?')) return;
+    const safeKey = cabName.replace(/[^a-zA-Z0-9]/g, '_');
+    const statusDiv = document.getElementById('editstatus-' + safeKey);
+    statusDiv.innerHTML = '<span style="color:var(--text-muted)">Удаление...</span>';
+    try {
+      const r = await fetch(BASE_URL + "/products/" + productId + "/cabinets/" + cabName + ".json", { method: 'DELETE' });
+      if (r.ok) {
+        document.getElementById('cabrow-' + safeKey).remove();
+        statusDiv.remove();
+      } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
+    } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка сети</span>'; }
+  };
+
+  window.addCabinet = async function(productId) {
+    const cabName = document.getElementById('newCabName-' + productId).value.trim().replace(/[.#$\/\[\]]/g, "-");
+    const qty = document.getElementById('newCabQty-' + productId).value.trim();
+    const statusDiv = document.getElementById('addcabstatus-' + productId);
+    if (!cabName || !qty) { statusDiv.innerHTML = '<span class="error">Заполните поля!</span>'; return; }
+    statusDiv.innerHTML = '<span style="color:var(--text-muted)">Сохранение...</span>';
+    try {
+      const r = await fetch(BASE_URL + "/products/" + productId + "/cabinets/" + cabName + ".json", {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(parseInt(qty, 10))
+      });
+      if (r.ok) {
+        statusDiv.innerHTML = '<span class="success">✅ Шкаф добавлен!</span>';
+        document.getElementById('newCabName-' + productId).value = '';
+        document.getElementById('newCabQty-' + productId).value = '';
+        loadProductForEdit(productId);
+      } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
+    } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка сети</span>'; }
+  };
+
+  window.deleteProduct = async function(productId) {
+    if (!confirm('Удалить товар #' + productId + ' полностью? Это нельзя отменить!')) return;
+    try {
+      const r = await fetch(BASE_URL + "/products/" + productId + ".json", { method: 'DELETE' });
+      if (r.ok) {
+        document.getElementById('editResult').innerHTML = '<span class="success">✅ Товар удалён.</span>';
+        document.getElementById('editSearchId').value = '';
+      } else {
+        alert('Ошибка удаления!');
+      }
+    } catch(e) { alert('Ошибка сети: ' + e.message); }
+  };
+
+  // ===== ОБЩАЯ ИСТОРИЯ (Firebase) с авто-удалением старше 1 месяца =====
+  function getMoldovaTime() {
+    return new Date().toLocaleString('ru-RU', {
+      timeZone: 'Europe/Chisinau',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+  }
+
+  async function saveToSharedHistory(productId, productName, action) {
+    const entry = {
+      id: productId,
+      name: productName || '—',
+      action: action || '🔍 Поиск',
+      user: MY_USER_ID,
+      ts: Date.now(),
+      dt: getMoldovaTime()
+    };
+    try {
+      await fetch(BASE_URL + "/search_history.json", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(entry)
+      });
+      // Запускаем очистку старых записей (старше 1 месяца)
+      cleanOldSharedHistory();
+    } catch(e) { console.warn('История не сохранена:', e); }
+  }
+
+  async function cleanOldSharedHistory() {
+    // Удаляем записи старше 1 месяца из Firebase
+    try {
+      const cutoff = Date.now() - ONE_MONTH_MS;
+      const resp = await fetch(BASE_URL + "/search_history.json?orderBy=%22ts%22&endAt=" + cutoff);
+      const data = await resp.json();
+      if (!data || data.error || typeof data !== 'object') return;
+      const keys = Object.keys(data);
+      // Удаляем параллельно, но не более 20 за раз чтобы не перегружать
+      const toDelete = keys.slice(0, 20);
+      await Promise.all(toDelete.map(function(key) {
+        return fetch(BASE_URL + "/search_history/" + key + ".json", { method: 'DELETE' }).catch(function(){});
+      }));
+    } catch(e) { /* тихо игнорируем */ }
+  }
+
+  async function loadSharedHistory() {
+    const tbody = document.getElementById('sharedHistoryBody');
+    const emptyMsg = document.getElementById('sharedHistoryEmpty');
+    if (!tbody) return;
+    try {
+      let resp = await fetch(BASE_URL + "/search_history.json?orderBy=%22ts%22&limitToLast=30");
+      let data = await resp.json();
+
+      if (data && data.error) {
+        resp = await fetch(BASE_URL + "/search_history.json");
+        data = await resp.json();
+      }
+
+      if (!data || typeof data !== 'object') {
+        emptyMsg.style.display = 'block';
+        tbody.innerHTML = '';
+        return;
+      }
+
+      const now = Date.now();
+      const entries = Object.values(data)
+        .filter(function(e) { return e && e.id && (now - (e.ts || 0)) < ONE_MONTH_MS; })
+        .sort(function(a, b) { return (b.ts || 0) - (a.ts || 0) })
+        .slice(0, 30);
+
+      if (entries.length === 0) {
+        emptyMsg.style.display = 'block';
+        tbody.innerHTML = '';
+        return;
+      }
+
+      emptyMsg.style.display = 'none';
+      tbody.innerHTML = '';
+      entries.forEach(function(entry) {
+        const tr = document.createElement('tr');
+        const actionCell = entry.action || '🔍 Поиск';
+        const actionColor = actionCell.includes('+') ? 'var(--green)' : actionCell.includes('-') ? 'var(--red)' : 'var(--text-muted)';
+        tr.innerHTML =
+          '<td onclick="quickSearch(\'' + entry.id + '\')">' + entry.id + '</td>' +
+          '<td>' + (entry.name || '—') + '</td>' +
+          '<td style="color:' + actionColor + ';font-weight:bold;">' + actionCell + '</td>' +
+          '<td style="color:var(--orange);font-size:12px;">' + (entry.user || '—') + '</td>' +
+          '<td class="dt">' + (entry.dt || '—') + '</td>';
+        tbody.appendChild(tr);
+      });
+    } catch(e) {
+      console.warn('Ошибка загрузки общей истории:', e);
+    }
+  }
+
+  function quickSearch(id) {
+    document.getElementById('searchId').value = id;
+    switchTab('Search');
+    searchProduct(id);
+  }
+
+  // Обновляем общую историю каждые 30 сек только если открыта вкладка истории
+  setInterval(function() {
+    if (document.getElementById('panelHistory').classList.contains('active')) {
+      loadSharedHistory();
+    }
+  }, 30000);
+</script>
+
+</body>
+</html>
