@@ -458,6 +458,7 @@
       const response = await fetch(BASE_URL + "/products/" + id + "/cabinets/" + cabinet + ".json", { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(parseInt(qty, 10)) });
       if (response.ok) {
         statusDiv.innerHTML = '<span class="success">✅ Сохранено! Шкаф: ' + cabinet + '</span>';
+        saveToSharedHistory(id, name, '➕ Добавлен (' + cabinet + ', ' + qty + ' шт.)');
         document.getElementById('addId').value = '';
         document.getElementById('addCabinet').value = '';
         document.getElementById('addQty').value = '';
