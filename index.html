@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Товарный Ассистент</title>
+  <meta name="theme-color" content="#121212">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Склад">
+  <link rel="manifest" href="manifest.json">
   <style>
     :root {
       --bg: #121212;
@@ -513,6 +519,14 @@
 
     resultDiv.innerHTML = '<div class="edit-product-card">' +
       '<div class="edit-product-name">📋 ' + product.name + ' <span style="color:var(--text-muted);font-size:13px;">#' + productId + '</span></div>' +
+      '<div style="margin-bottom:12px;">' +
+        '<label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">✏️ Изменить название</label>' +
+        '<div style="display:flex;gap:8px;">' +
+          '<input type="text" id="editName-' + productId + '" value="' + product.name + '" style="margin:0;flex:1;">' +
+          '<button class="btn-save-edit" onclick="saveProductName(\'' + productId + '\')" style="white-space:nowrap;">💾</button>' +
+        '</div>' +
+        '<div class="edit-status" id="namestatus-' + productId + '"></div>' +
+      '</div>' +
       '<strong style="font-size:13px;color:var(--text-muted);">Шкафы:</strong>' +
       cabHtml +
       '<div class="add-cabinet-section">' +
@@ -527,6 +541,25 @@
       '<button class="btn-del-product" onclick="deleteProduct(\'' + productId + '\')">🗑 Удалить весь товар</button>' +
     '</div>';
   }
+
+  window.saveProductName = async function(productId) {
+    const newName = document.getElementById('editName-' + productId).value.trim();
+    const statusDiv = document.getElementById('namestatus-' + productId);
+    if (!newName) { statusDiv.innerHTML = '<span class="error">Название не может быть пустым</span>'; return; }
+    statusDiv.innerHTML = '<span style="color:var(--text-muted)">Сохранение...</span>';
+    try {
+      const r = await fetch(BASE_URL + "/products/" + productId + "/name.json", {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(newName)
+      });
+      if (r.ok) {
+        statusDiv.innerHTML = '<span class="success">✅ Название обновлено</span>';
+        saveToSharedHistory(productId, newName, '✏️ Переименован: ' + newName);
+        // Обновляем заголовок карточки
+        const card = document.querySelector('.edit-product-name');
+        if (card) card.innerHTML = '📋 ' + newName + ' <span style="color:var(--text-muted);font-size:13px;">#' + productId + '</span>';
+      } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
+    } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка сети</span>'; }
+  };
 
   window.saveCabinetQty = async function(productId, cabName) {
     const safeKey = cabName.replace(/[^a-zA-Z0-9]/g, '_');
@@ -719,7 +752,7 @@
         const actionCell = entry.action || '🔍 Поиск';
         const actionColor = actionCell.includes('+') ? 'var(--green)' : actionCell.includes('-') ? 'var(--red)' : 'var(--text-muted)';
         tr.innerHTML =
-          '<td onclick="quickSearch(\'' + entry.id + '\')">' + entry.id + '</td>' +
+          '<td onclick="showProductHistory(\'' + entry.id + '\', \'' + (entry.name || '').replace(/'/g, '') + '\')" style="cursor:pointer;">' + entry.id + '</td>' +
           '<td>' + (entry.name || '—') + '</td>' +
           '<td style="color:' + actionColor + ';font-weight:bold;">' + actionCell + '</td>' +
           '<td style="color:var(--orange);font-size:12px;">' + (entry.user || '—') + '</td>' +
@@ -761,13 +794,101 @@
     searchProduct(id);
   }
 
-  // Обновляем историю каждые 30 сек только если открыта вкладка истории
+  // ===== ИСТОРИЯ ИЗМЕНЕНИЙ ТОВАРА =====
+  window.showProductHistory = async function(productId, productName) {
+    const modal = document.getElementById('productHistoryModal');
+    const title = document.getElementById('productHistoryTitle');
+    const tbody = document.getElementById('productHistoryBody');
+    const loading = document.getElementById('productHistoryLoading');
+    const empty = document.getElementById('productHistoryEmpty');
+
+    title.textContent = '📋 ' + productId + (productName ? ' — ' + productName : '');
+    tbody.innerHTML = '';
+    empty.style.display = 'none';
+    loading.style.display = 'block';
+    modal.style.display = 'flex';
+
+    try {
+      // Загружаем ВСЕ записи по этому товару из Firebase
+      const resp = await fetch(BASE_URL + "/search_history.json?orderBy=%22id%22&equalTo=%22" + productId + "%22");
+      let data = await resp.json();
+
+      // Fallback если нет индекса
+      if (data && data.error) {
+        const resp2 = await fetch(BASE_URL + "/search_history.json");
+        data = await resp2.json();
+      }
+
+      loading.style.display = 'none';
+
+      if (!data || typeof data !== 'object') { empty.style.display = 'block'; return; }
+
+      const entries = Object.values(data)
+        .filter(function(e) { return e && e.id === productId; })
+        .sort(function(a, b) { return (b.ts || 0) - (a.ts || 0) });
+
+      if (entries.length === 0) { empty.style.display = 'block'; return; }
+
+      entries.forEach(function(entry) {
+        const tr = document.createElement('tr');
+        const actionCell = entry.action || '🔍 Поиск';
+        const actionColor = actionCell.includes('+') ? 'var(--green)' : actionCell.includes('-') ? 'var(--red)' : actionCell.includes('➕') ? 'var(--blue)' : 'var(--text-muted)';
+        tr.innerHTML =
+          '<td style="color:' + actionColor + ';font-weight:bold;">' + actionCell + '</td>' +
+          '<td style="color:var(--orange);font-size:12px;">' + (entry.user || '—') + '</td>' +
+          '<td style="color:var(--text-muted);font-size:12px;white-space:nowrap;">' + (entry.dt || '—') + '</td>';
+        tbody.appendChild(tr);
+      });
+
+      document.getElementById('productHistoryCount').textContent = 'Всего записей: ' + entries.length;
+    } catch(e) {
+      loading.style.display = 'none';
+      empty.style.display = 'block';
+      console.warn('Ошибка загрузки истории товара:', e);
+    }
+  };
+
+  function quickSearchFromHistory() {
+    const title = document.getElementById('productHistoryTitle').textContent;
+    const id = title.replace('📋 ', '').split(' — ')[0].trim();
+    document.getElementById('productHistoryModal').style.display = 'none';
+    document.getElementById('searchId').value = id;
+    switchTab('Search');
+    searchProduct(id);
+  }
   setInterval(function() {
     if (document.getElementById('panelHistory').classList.contains('active')) {
       loadSharedHistory();
     }
   }, 30000);
 </script>
+
+<!-- Модалка истории изменений товара -->
+<div id="productHistoryModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:998;align-items:flex-start;justify-content:center;padding-top:40px;overflow-y:auto;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:20px;width:92%;max-width:480px;margin-bottom:40px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div id="productHistoryTitle" style="font-size:15px;font-weight:bold;color:var(--text);flex:1;"></div>
+      <button onclick="document.getElementById('productHistoryModal').style.display='none'"
+        style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:14px;margin-left:10px;">✕</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button onclick="quickSearchFromHistory()" style="flex:1;padding:9px;background:var(--blue);color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;">🔍 Открыть товар</button>
+    </div>
+    <div id="productHistoryLoading" style="color:var(--text-muted);font-size:14px;padding:8px 0;">⏳ Загрузка...</div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr>
+          <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid var(--border);font-size:12px;">Действие</th>
+          <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid var(--border);font-size:12px;">Кто</th>
+          <th style="text-align:left;color:var(--text-muted);padding:4px 6px;border-bottom:1px solid var(--border);font-size:12px;">Когда</th>
+        </tr>
+      </thead>
+      <tbody id="productHistoryBody"></tbody>
+    </table>
+    <div id="productHistoryEmpty" style="color:var(--text-muted);font-size:14px;font-style:italic;padding:8px 0;display:none;">Записей нет</div>
+    <div id="productHistoryCount" style="color:var(--text-muted);font-size:12px;margin-top:8px;text-align:right;"></div>
+  </div>
+</div>
 
 <!-- Модалка ввода имени -->
 <div id="nameModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:999;align-items:center;justify-content:center;">
@@ -797,6 +918,11 @@
   } else {
     const el = document.getElementById('currentUserName');
     if (el) el.textContent = MY_USER_ID;
+  }
+
+  // PWA — регистрация сервис-воркера
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function(e) { console.warn('SW:', e); });
   }
 </script>
 
