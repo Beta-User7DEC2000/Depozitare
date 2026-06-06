@@ -1,5 +1,5 @@
-const CACHE_NAME = 'sklad-v1';
-const ASSETS = ['/', '/index.html', '/manifest.json'];
+const CACHE_NAME = 'sklad-v2';
+const ASSETS = ['/Depozitare/', '/Depozitare/index.html', '/Depozitare/manifest.json'];
 
 self.addEventListener('install', function(e) {
   e.waitUntil(
