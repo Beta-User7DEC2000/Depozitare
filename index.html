@@ -137,8 +137,9 @@
     </div>
 
     <div>
-      <div class="shared-history-title">
-        <span class="live-dot"></span> Общая история поиска
+      <div class="shared-history-title" style="display:flex;align-items:center;justify-content:space-between;">
+        <span><span class="live-dot"></span> Общая история поиска</span>
+        <span style="font-size:12px;color:var(--orange);cursor:pointer;" onclick="changeName()">👤 <span id="currentUserName"></span> ✏️</span>
       </div>
 
       <!-- Фильтр по дате -->
@@ -179,16 +180,28 @@
   const BASE_URL = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app";
   const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
 
-  // Уникальный ID пользователя
-  function getUserId() {
-    let uid = localStorage.getItem('userId');
-    if (!uid) {
-      uid = 'u' + Math.random().toString(36).slice(2,7).toUpperCase();
-      localStorage.setItem('userId', uid);
+  // ===== ИМЯ ПОЛЬЗОВАТЕЛЯ =====
+  let MY_USER_ID = localStorage.getItem('userName') || null;
+
+  function confirmName() {
+    const input = document.getElementById('nameInput');
+    const name = input.value.trim();
+    if (name.length < 2) {
+      document.getElementById('nameError').style.display = 'block';
+      return;
     }
-    return uid;
+    localStorage.setItem('userName', name);
+    MY_USER_ID = name;
+    document.getElementById('nameModal').style.display = 'none';
+    const el = document.getElementById('currentUserName');
+    if (el) el.textContent = MY_USER_ID;
   }
-  const MY_USER_ID = getUserId();
+
+  function changeName() {
+    document.getElementById('nameInput').value = MY_USER_ID || '';
+    document.getElementById('nameError').style.display = 'none';
+    document.getElementById('nameModal').style.display = 'flex';
+  }
 
   // ===== ЛОКАЛЬНАЯ ИСТОРИЯ с авто-удалением через 1 месяц =====
   // Формат: [{id, ts}, ...]
@@ -753,6 +766,37 @@
       loadSharedHistory();
     }
   }, 30000);
+</script>
+
+<!-- Модалка ввода имени -->
+<div id="nameModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:999;align-items:center;justify-content:center;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px 24px;width:90%;max-width:340px;text-align:center;">
+    <div style="font-size:28px;margin-bottom:8px;">👤</div>
+    <div style="font-size:18px;font-weight:bold;color:var(--text);margin-bottom:6px;">Как тебя зовут?</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:18px;">Имя будет отображаться в общей истории поиска</div>
+    <input id="nameInput" type="text" placeholder="Введи своё имя..." maxlength="20"
+      style="width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:16px;background:var(--surface2);color:var(--text);margin-bottom:14px;text-align:center;box-sizing:border-box;">
+    <button onclick="confirmName()"
+      style="width:100%;padding:13px;background:var(--blue);color:white;border:none;border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer;">
+      Сохранить
+    </button>
+    <div id="nameError" style="color:var(--red);font-size:13px;margin-top:8px;display:none;">Введи имя, минимум 2 символа</div>
+  </div>
+</div>
+
+<script>
+  // Enter в поле имени
+  document.getElementById('nameInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') confirmName();
+  });
+
+  // Показываем модалку если имя не задано, иначе показываем имя
+  if (!MY_USER_ID) {
+    document.getElementById('nameModal').style.display = 'flex';
+  } else {
+    const el = document.getElementById('currentUserName');
+    if (el) el.textContent = MY_USER_ID;
+  }
 </script>
 
 </body>
