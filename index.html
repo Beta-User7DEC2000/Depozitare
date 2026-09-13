@@ -98,6 +98,17 @@
     .cabinet-product-code:hover { border-color: var(--blue); color: var(--blue); }
     .cabinet-product-name { flex: 1; font-size: 14px; color: var(--text); }
     .cabinet-product-qty { font-size: 14px; font-weight: bold; color: var(--green); white-space: nowrap; }
+
+    /* Миниатюры товара */
+    .product-thumb { width: 38px; height: 38px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); flex-shrink: 0; background: var(--surface); }
+    .product-thumb-placeholder { display: flex; align-items: center; justify-content: center; font-size: 17px; }
+    .product-image-main { display: block; max-width: 180px; max-height: 180px; border-radius: 10px; border: 1px solid var(--border); margin: 0 auto 12px auto; }
+
+    /* Загрузка/превью изображения в формах */
+    .image-upload-block { margin-bottom: 12px; }
+    .image-upload-block label { font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 6px; }
+    .image-upload-block input[type="file"] { padding: 8px; font-size: 13px; }
+    .img-preview { max-width: 130px; max-height: 130px; border-radius: 10px; border: 1px solid var(--border); display: none; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -112,7 +123,7 @@
 
   <!-- Панель Поиска -->
   <div id="panelSearch" class="panel active">
-    <input type="text" id="searchId" placeholder="Код товара (6 цифр) или номер шкафа..." maxlength="20">
+    <input type="text" id="searchId" placeholder="Код (6 цифр), название товара или шкаф..." maxlength="60">
     <button id="searchBtn" class="main-btn">Найти</button>
     <div id="result"></div>
     <div id="cabinetResult" class="cabinet-search-result"></div>
@@ -124,6 +135,12 @@
     <input type="text" id="addName" placeholder="Название товара...">
     <input type="text" id="addCabinet" placeholder="Номер шкафа (например: А-3)...">
     <input type="number" id="addQty" placeholder="Количество в этом шкафу..." min="0">
+    <div class="image-upload-block">
+      <label>🖼️ Фото товара (необязательно, чтобы легче узнать товар)</label>
+      <input type="file" id="addImageFile" accept="image/*">
+      <input type="url" id="addImageUrl" placeholder="...или вставьте ссылку на изображение">
+      <img id="addImagePreview" class="img-preview">
+    </div>
     <button id="saveBtn" class="main-btn">Сохранить в облако</button>
     <div id="addStatus" style="margin-top: 8px; font-size: 14px;"></div>
   </div>
@@ -185,6 +202,39 @@
 <script>
   const BASE_URL = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app";
   const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+  // ===== ИЗОБРАЖЕНИЯ ТОВАРОВ =====
+  // Сжимает выбранный файл-изображение в компактный base64 (JPEG), чтобы не раздувать базу.
+  function fileToCompressedDataUrl(file, maxDim, quality) {
+    return new Promise(function(resolve, reject) {
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+          let w = img.width, h = img.height;
+          if (w > h) { if (w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; } }
+          else { if (h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; } }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          resolve(canvas.toDataURL('image/jpeg', quality));
+        };
+        img.onerror = function() { reject(new Error('Не удалось прочитать изображение')); };
+        img.src = e.target.result;
+      };
+      reader.onerror = function() { reject(new Error('Ошибка чтения файла')); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // Возвращает HTML миниатюры товара (или заглушку, если фото нет)
+  function getThumbHtml(image) {
+    if (image) {
+      return '<img src="' + image + '" class="product-thumb" onerror="this.style.display=\'none\'">';
+    }
+    return '<span class="product-thumb product-thumb-placeholder">📦</span>';
+  }
 
   // ===== ИМЯ ПОЛЬЗОВАТЕЛЯ =====
   let MY_USER_ID = localStorage.getItem('userName') || null;
@@ -305,9 +355,9 @@
       document.getElementById('cabinetResult').style.display = 'none';
       searchProduct(val);
     } else {
-      // Иначе — поиск по шкафу
+      // Иначе — поиск по названию товара и/или по шкафу
       document.getElementById('result').style.display = 'none';
-      searchByCabinet(val);
+      searchByNameOrCabinet(val);
     }
   }
 
@@ -340,57 +390,86 @@
     }
   }
 
-  // ===== ПОИСК ПО ШКАФУ =====
-  async function searchByCabinet(cabinetName) {
+  // ===== ПОИСК ПО НАЗВАНИЮ ТОВАРА И/ИЛИ ПО ШКАФУ =====
+  async function searchByNameOrCabinet(query) {
     const cabDiv = document.getElementById('cabinetResult');
     cabDiv.style.display = 'block';
-    cabDiv.innerHTML = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + '</div><div style="color:var(--text-muted)">Загрузка...</div>';
+    cabDiv.innerHTML = '<div class="cabinet-search-title">🔎 «' + query + '»</div><div style="color:var(--text-muted)">Загрузка...</div>';
 
     try {
       const response = await fetch(BASE_URL + "/products.json");
       const allProducts = await response.json();
 
       if (!allProducts || typeof allProducts !== 'object') {
-        cabDiv.innerHTML = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + '</div><span class="error">Нет данных.</span>';
+        cabDiv.innerHTML = '<div class="cabinet-search-title">🔎 «' + query + '»</div><span class="error">Нет данных.</span>';
         return;
       }
 
-      // Ищем совпадения по шкафу (нечувствительно к регистру)
-      const cabLower = cabinetName.toLowerCase();
-      const found = [];
+      const qLower = query.toLowerCase();
+
+      // Совпадения по шкафу (точное совпадение, нечувствительно к регистру)
+      const cabinetMatches = [];
       Object.keys(allProducts).forEach(function(productId) {
         const product = allProducts[productId];
         if (!product || !product.cabinets) return;
         Object.keys(product.cabinets).forEach(function(cab) {
-          if (cab.toLowerCase() === cabLower) {
-            found.push({
+          if (cab.toLowerCase() === qLower) {
+            cabinetMatches.push({
               id: productId,
               name: product.name || '—',
-              qty: product.cabinets[cab]
+              qty: product.cabinets[cab],
+              image: product.image || null
             });
           }
         });
       });
 
-      if (found.length === 0) {
-        cabDiv.innerHTML = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + '</div><span class="error">Товаров в этом шкафу не найдено.</span>';
+      // Совпадения по названию товара (вхождение подстроки, нечувствительно к регистру)
+      const nameMatches = [];
+      Object.keys(allProducts).forEach(function(productId) {
+        const product = allProducts[productId];
+        if (!product || !product.name) return;
+        if (product.name.toLowerCase().includes(qLower)) {
+          nameMatches.push({ id: productId, name: product.name, image: product.image || null });
+        }
+      });
+
+      if (cabinetMatches.length === 0 && nameMatches.length === 0) {
+        cabDiv.innerHTML = '<div class="cabinet-search-title">🔎 «' + query + '»</div><span class="error">Ничего не найдено.</span>';
         return;
       }
 
-      // Сортируем по коду
-      found.sort(function(a, b) { return a.id.localeCompare(b.id); });
+      let html = '';
 
-      let html = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + ' <span style="color:var(--text-muted);font-size:13px;font-weight:normal;">— ' + found.length + ' товаров</span></div>';
-      found.forEach(function(item) {
-        html += '<div class="cabinet-product-row">' +
-          '<span class="cabinet-product-code" onclick="goToProduct(\'' + item.id + '\')" title="Нажмите для поиска">' + item.id + '</span>' +
-          '<span class="cabinet-product-name">' + item.name + '</span>' +
-          '<span class="cabinet-product-qty">' + item.qty + ' шт.</span>' +
-        '</div>';
-      });
+      if (cabinetMatches.length > 0) {
+        cabinetMatches.sort(function(a, b) { return a.id.localeCompare(b.id); });
+        html += '<div class="cabinet-search-title">🗄 Шкаф: ' + query + ' <span style="color:var(--text-muted);font-size:13px;font-weight:normal;">— ' + cabinetMatches.length + ' товаров</span></div>';
+        cabinetMatches.forEach(function(item) {
+          html += '<div class="cabinet-product-row">' +
+            getThumbHtml(item.image) +
+            '<span class="cabinet-product-code" onclick="goToProduct(\'' + item.id + '\')" title="Нажмите для поиска">' + item.id + '</span>' +
+            '<span class="cabinet-product-name">' + item.name + '</span>' +
+            '<span class="cabinet-product-qty">' + item.qty + ' шт.</span>' +
+          '</div>';
+        });
+      }
+
+      if (nameMatches.length > 0) {
+        nameMatches.sort(function(a, b) { return a.name.localeCompare(b.name, 'ru'); });
+        if (html) html += '<div style="height:16px;"></div>';
+        html += '<div class="cabinet-search-title">📦 Товары по названию <span style="color:var(--text-muted);font-size:13px;font-weight:normal;">— ' + nameMatches.length + '</span></div>';
+        nameMatches.forEach(function(item) {
+          html += '<div class="cabinet-product-row">' +
+            getThumbHtml(item.image) +
+            '<span class="cabinet-product-name" style="flex:1;">' + item.name + '</span>' +
+            '<span class="cabinet-product-code" onclick="goToProduct(\'' + item.id + '\')" title="Нажмите для поиска">' + item.id + '</span>' +
+          '</div>';
+        });
+      }
+
       cabDiv.innerHTML = html;
     } catch(e) {
-      cabDiv.innerHTML = '<div class="cabinet-search-title">🗄 Шкаф: ' + cabinetName + '</div><span class="error">Ошибка сети: ' + e.message + '</span>';
+      cabDiv.innerHTML = '<div class="cabinet-search-title">🔎 «' + query + '»</div><span class="error">Ошибка сети: ' + e.message + '</span>';
     }
   }
 
@@ -402,7 +481,11 @@
 
   function renderProductCard(productId, product) {
     const resultDiv = document.getElementById('result');
-    let html = '<strong>Название:</strong> ' + product.name + '<br><strong>Места хранения:</strong><br>';
+    let html = '';
+    if (product.image) {
+      html += '<img src="' + product.image + '" class="product-image-main" onerror="this.style.display=\'none\'">';
+    }
+    html += '<strong>Название:</strong> ' + product.name + '<br><strong>Места хранения:</strong><br>';
     if (!product.cabinets || Object.keys(product.cabinets).length === 0) {
       html += '<span class="error">Шкафы не указаны.</span>';
       resultDiv.innerHTML = html;
@@ -449,6 +532,28 @@
     }
   };
 
+  // ===== ДОБАВИТЬ: фото товара =====
+  window._addImageData = null;
+  document.getElementById('addImageFile').addEventListener('change', async function() {
+    const file = this.files && this.files[0];
+    const preview = document.getElementById('addImagePreview');
+    if (!file) { window._addImageData = null; preview.style.display = 'none'; return; }
+    try {
+      window._addImageData = await fileToCompressedDataUrl(file, 300, 0.6);
+      preview.src = window._addImageData;
+      preview.style.display = 'block';
+    } catch(e) {
+      alert('Не удалось обработать изображение: ' + e.message);
+    }
+  });
+  document.getElementById('addImageUrl').addEventListener('input', function() {
+    if (window._addImageData) return; // загруженный файл в приоритете
+    const val = this.value.trim();
+    const preview = document.getElementById('addImagePreview');
+    if (val) { preview.src = val; preview.style.display = 'block'; }
+    else { preview.style.display = 'none'; }
+  });
+
   // ===== ДОБАВИТЬ =====
   document.getElementById('saveBtn').addEventListener('click', async function() {
     const id = document.getElementById('addId').value.trim();
@@ -462,12 +567,22 @@
     try {
       await fetch(BASE_URL + "/products/" + id + "/name.json", { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(name) });
       const response = await fetch(BASE_URL + "/products/" + id + "/cabinets/" + cabinet + ".json", { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(parseInt(qty, 10)) });
+
+      const imageValue = window._addImageData || document.getElementById('addImageUrl').value.trim() || null;
+      if (imageValue) {
+        await fetch(BASE_URL + "/products/" + id + "/image.json", { method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(imageValue) });
+      }
+
       if (response.ok) {
         statusDiv.innerHTML = '<span class="success">✅ Сохранено! Шкаф: ' + cabinet + '</span>';
         saveToSharedHistory(id, name, '➕ Добавлен (' + cabinet + ', ' + qty + ' шт.)');
         document.getElementById('addId').value = '';
         document.getElementById('addCabinet').value = '';
         document.getElementById('addQty').value = '';
+        document.getElementById('addImageUrl').value = '';
+        document.getElementById('addImageFile').value = '';
+        document.getElementById('addImagePreview').style.display = 'none';
+        window._addImageData = null;
       } else throw new Error("Ошибка сервера");
     } catch (error) {
       statusDiv.innerHTML = '<span class="error">Ошибка: ' + error.message + '</span>';
@@ -517,8 +632,24 @@
       '</div><div class="edit-status" id="editstatus-' + safeKey + '"></div>';
     });
 
+    const imageBlock =
+      '<div class="image-upload-block">' +
+        '<label>🖼️ Фото товара</label>' +
+        (product.image
+          ? '<img src="' + product.image + '" class="img-preview" style="display:block;" id="editImagePreview-' + productId + '" onerror="this.style.display=\'none\'">'
+          : '<div style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Фото не добавлено</div><img class="img-preview" id="editImagePreview-' + productId + '">') +
+        '<input type="file" id="editImageFile-' + productId + '" accept="image/*">' +
+        '<input type="url" id="editImageUrl-' + productId + '" placeholder="...или вставьте ссылку на изображение">' +
+        '<div style="display:flex;gap:8px;margin-top:8px;">' +
+          '<button class="btn-save-edit" onclick="saveProductImage(\'' + productId + '\')">💾 Сохранить фото</button>' +
+          (product.image ? '<button class="btn-del-cabinet" onclick="removeProductImage(\'' + productId + '\')">🗑 Убрать фото</button>' : '') +
+        '</div>' +
+        '<div class="edit-status" id="imagestatus-' + productId + '"></div>' +
+      '</div>';
+
     resultDiv.innerHTML = '<div class="edit-product-card">' +
       '<div class="edit-product-name">📋 ' + product.name + ' <span style="color:var(--text-muted);font-size:13px;">#' + productId + '</span></div>' +
+      imageBlock +
       '<div style="margin-bottom:12px;">' +
         '<label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">✏️ Изменить название</label>' +
         '<div style="display:flex;gap:8px;">' +
@@ -540,6 +671,22 @@
       '</div>' +
       '<button class="btn-del-product" onclick="deleteProduct(\'' + productId + '\')">🗑 Удалить весь товар</button>' +
     '</div>';
+
+    const editImgFileInput = document.getElementById('editImageFile-' + productId);
+    if (editImgFileInput) {
+      editImgFileInput.addEventListener('change', async function() {
+        const file = this.files && this.files[0];
+        const preview = document.getElementById('editImagePreview-' + productId);
+        if (!file) return;
+        try {
+          const dataUrl = await fileToCompressedDataUrl(file, 300, 0.6);
+          preview.src = dataUrl;
+          preview.style.display = 'block';
+        } catch(e) {
+          alert('Не удалось обработать изображение: ' + e.message);
+        }
+      });
+    }
   }
 
   window.saveProductName = async function(productId) {
@@ -605,6 +752,40 @@
         loadProductForEdit(productId);
       } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
     } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка сети</span>'; }
+  };
+
+  window.saveProductImage = async function(productId) {
+    const fileInput = document.getElementById('editImageFile-' + productId);
+    const urlInput = document.getElementById('editImageUrl-' + productId);
+    const statusDiv = document.getElementById('imagestatus-' + productId);
+    statusDiv.innerHTML = '<span style="color:var(--text-muted)">Сохранение...</span>';
+    try {
+      let imageValue = null;
+      if (fileInput.files && fileInput.files[0]) {
+        imageValue = await fileToCompressedDataUrl(fileInput.files[0], 300, 0.6);
+      } else {
+        const urlVal = urlInput.value.trim();
+        if (urlVal) imageValue = urlVal;
+      }
+      if (!imageValue) { statusDiv.innerHTML = '<span class="error">Выберите файл или укажите ссылку</span>'; return; }
+      const r = await fetch(BASE_URL + "/products/" + productId + "/image.json", {
+        method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(imageValue)
+      });
+      if (r.ok) {
+        statusDiv.innerHTML = '<span class="success">✅ Фото сохранено</span>';
+        loadProductForEdit(productId);
+      } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
+    } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка: ' + e.message + '</span>'; }
+  };
+
+  window.removeProductImage = async function(productId) {
+    if (!confirm('Убрать фото товара?')) return;
+    try {
+      const r = await fetch(BASE_URL + "/products/" + productId + "/image.json", { method: 'DELETE' });
+      if (r.ok) {
+        loadProductForEdit(productId);
+      } else { alert('Ошибка удаления фото!'); }
+    } catch(e) { alert('Ошибка сети: ' + e.message); }
   };
 
   window.deleteProduct = async function(productId) {
