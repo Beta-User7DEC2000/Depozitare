@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Информация о товаре</title>
+<meta name="theme-color" content="#121212">
+<style>
+  :root {
+    --bg: #121212;
+    --surface: #1e1e1e;
+    --border: #333;
+    --text: #e0e0e0;
+    --text-muted: #888;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh;
+  }
+  .card {
+    max-width: 520px; width: 100%;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 18px;
+    text-align: center; margin-top: 8px;
+  }
+  img.info-image {
+    max-width: 100%; border-radius: 10px; margin-top: 12px; display: block;
+  }
+  h1 { font-size: 18px; margin: 0; color: var(--text); }
+  .muted { color: var(--text-muted); font-size: 14px; }
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="muted">⏳ Загрузка...</div>
+  </div>
+
+  <script>
+    // Тот же адрес базы данных, что и в основном приложении
+    const BASE_URL = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app";
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('id');
+    const card = document.getElementById('card');
+
+    if (!id) {
+      card.innerHTML = '<div class="muted">Код товара не указан в ссылке.</div>';
+    } else {
+      fetch(BASE_URL + "/public_info/" + encodeURIComponent(id) + ".json")
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data && data.image) {
+            card.innerHTML =
+              (data.name ? '<h1>' + data.name + '</h1>' : '') +
+              '<img class="info-image" src="' + data.image + '" alt="Информация о товаре">';
+          } else {
+            card.innerHTML = '<div class="muted">Информация об этом товаре пока не добавлена.</div>';
+          }
+        })
+        .catch(function() {
+          card.innerHTML = '<div class="muted">Не удалось загрузить информацию. Попробуйте позже.</div>';
+        });
+    }
+  </script>
+</body>
+</html>

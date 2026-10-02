@@ -113,7 +113,19 @@
 </head>
 <body>
 
-<div class="container">
+<!-- Экран входа — закрывает доступ к вкладкам Поиск/Добавить/Изменить/История -->
+<div id="accessGateModal" style="display:none;position:fixed;inset:0;background:var(--bg);z-index:2000;align-items:center;justify-content:center;flex-direction:column;">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px 24px;width:90%;max-width:340px;text-align:center;box-sizing:border-box;">
+    <div style="font-size:28px;margin-bottom:8px;">🔒</div>
+    <div style="font-size:18px;font-weight:bold;color:var(--text);margin-bottom:6px;">Доступ только для сотрудников</div>
+    <div style="font-size:13px;color:var(--text-muted);margin-bottom:18px;">Введите пароль, чтобы продолжить</div>
+    <input id="accessPasswordInput" type="password" placeholder="Пароль..." style="width:100%;padding:12px;border:1px solid var(--border);border-radius:8px;font-size:16px;background:var(--surface2);color:var(--text);margin-bottom:14px;text-align:center;box-sizing:border-box;">
+    <button onclick="checkAccessPassword()" style="width:100%;padding:13px;background:var(--blue);color:white;border:none;border-radius:8px;font-size:16px;font-weight:bold;cursor:pointer;">Войти</button>
+    <div id="accessPasswordError" style="color:var(--red);font-size:13px;margin-top:8px;display:none;">Неверный пароль</div>
+  </div>
+</div>
+
+<div class="container" id="mainApp" style="display:none;">
   <div class="tabs">
     <button class="tab-btn active" id="tabSearch">🔍 Поиск</button>
     <button class="tab-btn" id="tabAdd">➕ Добавить</button>
@@ -202,6 +214,41 @@
 <script>
   const BASE_URL = "https://storage-assistant-13f70-default-rtdb.europe-west1.firebasedatabase.app";
   const ONE_MONTH_MS = 30 * 24 * 60 * 60 * 1000;
+
+  // ===== ДОСТУП ПО ПАРОЛЮ =====
+  // Пароль: CCRsanitareKatalin07122000 (ниже хранится не сам пароль, а его SHA-256 хэш).
+  const ACCESS_HASH = "385a48d24714489aa3eb82ccd2ec856fc6475f7495e1c844411e7a3c4c04d399";
+
+  async function sha256Hex(text) {
+    const enc = new TextEncoder().encode(text);
+    const buf = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(buf)).map(function(b) { return b.toString(16).padStart(2, '0'); }).join('');
+  }
+
+  async function checkAccessPassword() {
+    const val = document.getElementById('accessPasswordInput').value;
+    const errDiv = document.getElementById('accessPasswordError');
+    const hash = await sha256Hex(val);
+    if (hash === ACCESS_HASH) {
+      localStorage.setItem('access_granted', '1');
+      unlockApp();
+    } else {
+      errDiv.style.display = 'block';
+    }
+  }
+  window.checkAccessPassword = checkAccessPassword;
+
+  function unlockApp() {
+    document.getElementById('accessGateModal').style.display = 'none';
+    document.getElementById('mainApp').style.display = 'block';
+    // Показываем модалку "как тебя зовут", если имя ещё не задано
+    if (!MY_USER_ID) {
+      document.getElementById('nameModal').style.display = 'flex';
+    } else {
+      const el = document.getElementById('currentUserName');
+      if (el) el.textContent = MY_USER_ID;
+    }
+  }
 
   // ===== ИЗОБРАЖЕНИЯ ТОВАРОВ =====
   // Сжимает выбранный файл-изображение в компактный base64 (JPEG), чтобы не раздувать базу.
@@ -625,10 +672,14 @@
     }
     resultDiv.innerHTML = '<span style="color:var(--text-muted)">Загрузка...</span>';
     try {
-      const response = await fetch(BASE_URL + "/products/" + id + ".json");
-      const product = await response.json();
+      const [productRes, publicInfoRes] = await Promise.all([
+        fetch(BASE_URL + "/products/" + id + ".json"),
+        fetch(BASE_URL + "/public_info/" + id + ".json")
+      ]);
+      const product = await productRes.json();
+      const publicInfo = await publicInfoRes.json();
       if (product && product.name) {
-        renderEditCard(id, product);
+        renderEditCard(id, product, publicInfo || null);
       } else {
         resultDiv.innerHTML = '<span class="error">Товар не найден.</span>';
       }
@@ -637,9 +688,20 @@
     }
   }
 
-  function renderEditCard(productId, product) {
+  // Ссылка на публичную страницу товара (для QR-кода, без пароля)
+  function getProductInfoUrl(id) {
+    const base = window.location.origin + window.location.pathname.replace(/index\.html$/, '');
+    return base + 'product-info.html?id=' + encodeURIComponent(id);
+  }
+
+  function getQrImageUrl(targetUrl) {
+    return 'https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=' + encodeURIComponent(targetUrl);
+  }
+
+  function renderEditCard(productId, product, publicInfo) {
     const resultDiv = document.getElementById('editResult');
     const cabinets = product.cabinets || {};
+    const hasInfo = publicInfo && publicInfo.image;
 
     let cabHtml = '';
     Object.keys(cabinets).forEach(function(cabName) {
@@ -667,9 +729,27 @@
         '<div class="edit-status" id="imagestatus-' + productId + '"></div>' +
       '</div>';
 
+    const infoBlock =
+      '<div class="image-upload-block">' +
+        '<label>🧾 Информация для покупателя (откроется по QR-коду)</label>' +
+        (hasInfo
+          ? '<img src="' + publicInfo.image + '" class="img-preview" style="display:block;" id="editInfoPreview-' + productId + '" onerror="this.style.display=\'none\'">'
+          : '<div style="color:var(--text-muted);font-size:13px;margin-bottom:8px;">Информация не добавлена</div><img class="img-preview" id="editInfoPreview-' + productId + '">') +
+        '<input type="file" id="editInfoFile-' + productId + '" accept="image/*">' +
+        '<input type="url" id="editInfoUrl-' + productId + '" placeholder="...или вставьте ссылку на изображение">' +
+        '<div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">' +
+          '<button class="btn-save-edit" onclick="saveProductInfo(\'' + productId + '\')">💾 Сохранить</button>' +
+          (hasInfo ? '<button class="btn-save-edit" style="background:var(--orange);" onclick="toggleProductQr(\'' + productId + '\')">📱 QR-код</button>' : '') +
+          (hasInfo ? '<button class="btn-del-cabinet" onclick="removeProductInfo(\'' + productId + '\')">🗑 Убрать</button>' : '') +
+        '</div>' +
+        '<div class="edit-status" id="infostatus-' + productId + '"></div>' +
+        '<div id="qrBlock-' + productId + '" style="display:none;margin-top:10px;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;"></div>' +
+      '</div>';
+
     resultDiv.innerHTML = '<div class="edit-product-card">' +
       '<div class="edit-product-name">📋 ' + product.name + ' <span style="color:var(--text-muted);font-size:13px;">#' + productId + '</span></div>' +
       imageBlock +
+      infoBlock +
       '<div style="margin-bottom:12px;">' +
         '<label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">✏️ Изменить название</label>' +
         '<div style="display:flex;gap:8px;">' +
@@ -700,6 +780,22 @@
         if (!file) return;
         try {
           const dataUrl = await fileToCompressedDataUrl(file, 300, 0.6);
+          preview.src = dataUrl;
+          preview.style.display = 'block';
+        } catch(e) {
+          alert('Не удалось обработать изображение: ' + e.message);
+        }
+      });
+    }
+
+    const editInfoFileInput = document.getElementById('editInfoFile-' + productId);
+    if (editInfoFileInput) {
+      editInfoFileInput.addEventListener('change', async function() {
+        const file = this.files && this.files[0];
+        const preview = document.getElementById('editInfoPreview-' + productId);
+        if (!file) return;
+        try {
+          const dataUrl = await fileToCompressedDataUrl(file, 1000, 0.75);
           preview.src = dataUrl;
           preview.style.display = 'block';
         } catch(e) {
@@ -806,6 +902,54 @@
         loadProductForEdit(productId);
       } else { alert('Ошибка удаления фото!'); }
     } catch(e) { alert('Ошибка сети: ' + e.message); }
+  };
+
+  window.saveProductInfo = async function(productId) {
+    const fileInput = document.getElementById('editInfoFile-' + productId);
+    const urlInput = document.getElementById('editInfoUrl-' + productId);
+    const statusDiv = document.getElementById('infostatus-' + productId);
+    statusDiv.innerHTML = '<span style="color:var(--text-muted)">Сохранение...</span>';
+    try {
+      let imageValue = null;
+      if (fileInput.files && fileInput.files[0]) {
+        imageValue = await fileToCompressedDataUrl(fileInput.files[0], 1000, 0.75);
+      } else {
+        const urlVal = urlInput.value.trim();
+        if (urlVal) imageValue = urlVal;
+      }
+      if (!imageValue) { statusDiv.innerHTML = '<span class="error">Выберите файл или укажите ссылку</span>'; return; }
+      const nameField = document.getElementById('editName-' + productId);
+      const productName = nameField ? nameField.value.trim() : '';
+      const r = await fetch(BASE_URL + "/public_info/" + productId + ".json", {
+        method: 'PUT', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ image: imageValue, name: productName })
+      });
+      if (r.ok) {
+        statusDiv.innerHTML = '<span class="success">✅ Информация сохранена</span>';
+        loadProductForEdit(productId);
+      } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
+    } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка: ' + e.message + '</span>'; }
+  };
+
+  window.removeProductInfo = async function(productId) {
+    if (!confirm('Убрать информацию для покупателя? QR-код перестанет показывать её.')) return;
+    try {
+      const r = await fetch(BASE_URL + "/public_info/" + productId + ".json", { method: 'DELETE' });
+      if (r.ok) {
+        loadProductForEdit(productId);
+      } else { alert('Ошибка удаления!'); }
+    } catch(e) { alert('Ошибка сети: ' + e.message); }
+  };
+
+  window.toggleProductQr = function(productId) {
+    const block = document.getElementById('qrBlock-' + productId);
+    if (block.style.display === 'block') { block.style.display = 'none'; return; }
+    const url = getProductInfoUrl(productId);
+    block.innerHTML =
+      '<img src="' + getQrImageUrl(url) + '" alt="QR-код" style="width:180px;height:180px;border-radius:8px;background:white;padding:6px;">' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-top:8px;word-break:break-all;">' + url + '</div>' +
+      '<div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Нажмите и удерживайте QR-код, чтобы сохранить картинку</div>';
+    block.style.display = 'block';
   };
 
   window.deleteProduct = async function(productId) {
@@ -1113,12 +1257,16 @@
     if (e.key === 'Enter') confirmName();
   });
 
-  // Показываем модалку если имя не задано, иначе показываем имя
-  if (!MY_USER_ID) {
-    document.getElementById('nameModal').style.display = 'flex';
+  // Enter в поле пароля доступа
+  document.getElementById('accessPasswordInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') checkAccessPassword();
+  });
+
+  // Проверяем доступ: если пароль уже вводили раньше на этом устройстве — сразу открываем приложение
+  if (localStorage.getItem('access_granted') === '1') {
+    unlockApp();
   } else {
-    const el = document.getElementById('currentUserName');
-    if (el) el.textContent = MY_USER_ID;
+    document.getElementById('accessGateModal').style.display = 'flex';
   }
 
   // PWA — регистрация сервис-воркера
