@@ -167,6 +167,15 @@
   <!-- Панель Истории -->
   <div id="panelHistory" class="panel">
     <div class="history-section">
+      <div class="history-section-title">🔎 История по товару (код или название)</div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="historySearchInput" placeholder="Код или название товара..." style="flex:1;margin:0;">
+        <button onclick="searchProductHistory()" style="padding:0 16px;background:var(--blue);color:white;border:none;border-radius:8px;cursor:pointer;font-weight:bold;white-space:nowrap;">Найти</button>
+      </div>
+      <div id="historySearchResult"></div>
+    </div>
+
+    <div class="history-section">
       <div class="history-section-title">Мои последние поиски</div>
       <ul class="history-list" id="historyList"><li class="history-empty">Ничего нет</li></ul>
     </div>
@@ -273,6 +282,13 @@
       reader.onerror = function() { reject(new Error('Ошибка чтения файла')); };
       reader.readAsDataURL(file);
     });
+  }
+
+  // Считает общее количество товара по всем шкафам
+  function sumCabinets(cabinets) {
+    let sum = 0;
+    Object.keys(cabinets || {}).forEach(function(k) { sum += parseInt(cabinets[k], 10) || 0; });
+    return sum;
   }
 
   // Возвращает HTML миниатюры товара (или заглушку, если фото нет)
@@ -551,12 +567,15 @@
     if (product.image) {
       html += '<img src="' + product.image + '" class="product-image-main" onerror="this.style.display=\'none\'">';
     }
-    html += '<strong>Название:</strong> ' + product.name + '<br><strong>Места хранения:</strong><br>';
+    html += '<strong>Название:</strong> ' + product.name + '<br>';
     if (!product.cabinets || Object.keys(product.cabinets).length === 0) {
-      html += '<span class="error">Шкафы не указаны.</span>';
+      html += '<strong>Места хранения:</strong><br><span class="error">Шкафы не указаны.</span>';
       resultDiv.innerHTML = html;
       return;
     }
+    const total = sumCabinets(product.cabinets);
+    html += '<strong>Всего на складе:</strong> <span id="totalQtyValue-' + productId + '" style="color:var(--green);font-weight:bold;">' + total + ' шт.</span><br>';
+    html += '<strong>Места хранения:</strong><br>';
     Object.keys(product.cabinets).forEach(function(cabinetName) {
       const currentQty = product.cabinets[cabinetName];
       const safeId = productId + '-' + cabinetName.replace(/[^a-zA-Z0-9]/g, '_');
@@ -588,6 +607,14 @@
         const sign = delta > 0 ? '+' : '';
         const productName = window._currentProductName || '';
         saveToSharedHistory(productId, productName, sign + delta + ' шт. (' + cabinetName + ')');
+        const totalEl = document.getElementById('totalQtyValue-' + productId);
+        if (totalEl) {
+          let sum = 0;
+          document.querySelectorAll('#result .qty-display').forEach(function(el) {
+            sum += parseInt(el.innerText, 10) || 0;
+          });
+          totalEl.textContent = sum + ' шт.';
+        }
       } else {
         qtyDisplay.innerText = currentQty + ' шт.';
         alert("Ошибка при обновлении");
@@ -708,7 +735,7 @@
       const safeKey = cabName.replace(/[^a-zA-Z0-9]/g, '_');
       cabHtml += '<div class="edit-cabinet-row" id="cabrow-' + safeKey + '">' +
         '<span class="edit-cabinet-name">📦 ' + cabName + '</span>' +
-        '<input class="edit-qty-input" type="number" id="editqty-' + safeKey + '" value="' + cabinets[cabName] + '" min="0">' +
+        '<input class="edit-qty-input" type="number" id="editqty-' + safeKey + '" value="' + cabinets[cabName] + '" data-original="' + cabinets[cabName] + '" min="0">' +
         '<button class="btn-save-edit" onclick="saveCabinetQty(\'' + productId + '\',\'' + cabName + '\')">💾</button>' +
         '<button class="btn-del-cabinet" onclick="deleteCabinet(\'' + productId + '\',\'' + cabName + '\')">🗑</button>' +
       '</div><div class="edit-status" id="editstatus-' + safeKey + '"></div>';
@@ -758,7 +785,7 @@
         '</div>' +
         '<div class="edit-status" id="namestatus-' + productId + '"></div>' +
       '</div>' +
-      '<strong style="font-size:13px;color:var(--text-muted);">Шкафы:</strong>' +
+      '<strong style="font-size:13px;color:var(--text-muted);">Шкафы: <span id="editTotalQtyValue" style="color:var(--green);">(всего ' + sumCabinets(cabinets) + ' шт.)</span></strong>' +
       cabHtml +
       '<div class="add-cabinet-section">' +
         '<h4>➕ Добавить шкаф</h4>' +
@@ -805,6 +832,15 @@
     }
   }
 
+  function recomputeEditTotal() {
+    let sum = 0;
+    document.querySelectorAll('#editResult .edit-qty-input').forEach(function(el) {
+      sum += parseInt(el.value, 10) || 0;
+    });
+    const el = document.getElementById('editTotalQtyValue');
+    if (el) el.textContent = '(всего ' + sum + ' шт.)';
+  }
+
   window.saveProductName = async function(productId) {
     const newName = document.getElementById('editName-' + productId).value.trim();
     const statusDiv = document.getElementById('namestatus-' + productId);
@@ -824,22 +860,36 @@
     } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка сети</span>'; }
   };
 
+  function currentEditName(productId) {
+    const nameField = document.getElementById('editName-' + productId);
+    return nameField ? nameField.value.trim() : '';
+  }
+
   window.saveCabinetQty = async function(productId, cabName) {
     const safeKey = cabName.replace(/[^a-zA-Z0-9]/g, '_');
-    const newQty = parseInt(document.getElementById('editqty-' + safeKey).value, 10);
+    const input = document.getElementById('editqty-' + safeKey);
+    const oldQty = input.getAttribute('data-original');
+    const newQty = parseInt(input.value, 10);
     const statusDiv = document.getElementById('editstatus-' + safeKey);
     statusDiv.innerHTML = '<span style="color:var(--text-muted)">Сохранение...</span>';
     try {
       const r = await fetch(BASE_URL + "/products/" + productId + "/cabinets/" + cabName + ".json", {
         method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(newQty)
       });
-      statusDiv.innerHTML = r.ok ? '<span class="success">✅ Сохранено</span>' : '<span class="error">Ошибка!</span>';
+      if (r.ok) {
+        statusDiv.innerHTML = '<span class="success">✅ Сохранено</span>';
+        input.setAttribute('data-original', newQty);
+        saveToSharedHistory(productId, currentEditName(productId), '✏️ Кол-во: ' + oldQty + ' → ' + newQty + ' шт. (' + cabName + ')');
+        recomputeEditTotal();
+      } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
     } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка сети</span>'; }
   };
 
   window.deleteCabinet = async function(productId, cabName) {
     if (!confirm('Удалить шкаф "' + cabName + '"?')) return;
     const safeKey = cabName.replace(/[^a-zA-Z0-9]/g, '_');
+    const input = document.getElementById('editqty-' + safeKey);
+    const qtyBefore = input ? input.value : '?';
     const statusDiv = document.getElementById('editstatus-' + safeKey);
     statusDiv.innerHTML = '<span style="color:var(--text-muted)">Удаление...</span>';
     try {
@@ -847,6 +897,8 @@
       if (r.ok) {
         document.getElementById('cabrow-' + safeKey).remove();
         statusDiv.remove();
+        saveToSharedHistory(productId, currentEditName(productId), '🗑 Шкаф удалён: ' + cabName + ' (было ' + qtyBefore + ' шт.)');
+        recomputeEditTotal();
       } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
     } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка сети</span>'; }
   };
@@ -863,6 +915,7 @@
       });
       if (r.ok) {
         statusDiv.innerHTML = '<span class="success">✅ Шкаф добавлен!</span>';
+        saveToSharedHistory(productId, currentEditName(productId), '➕ Шкаф добавлен: ' + cabName + ' (' + qty + ' шт.)');
         document.getElementById('newCabName-' + productId).value = '';
         document.getElementById('newCabQty-' + productId).value = '';
         loadProductForEdit(productId);
@@ -889,6 +942,7 @@
       });
       if (r.ok) {
         statusDiv.innerHTML = '<span class="success">✅ Фото сохранено</span>';
+        saveToSharedHistory(productId, currentEditName(productId), '🖼️ Фото товара обновлено');
         loadProductForEdit(productId);
       } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
     } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка: ' + e.message + '</span>'; }
@@ -899,6 +953,7 @@
     try {
       const r = await fetch(BASE_URL + "/products/" + productId + "/image.json", { method: 'DELETE' });
       if (r.ok) {
+        saveToSharedHistory(productId, currentEditName(productId), '🗑 Фото товара удалено');
         loadProductForEdit(productId);
       } else { alert('Ошибка удаления фото!'); }
     } catch(e) { alert('Ошибка сети: ' + e.message); }
@@ -918,14 +973,14 @@
         if (urlVal) imageValue = urlVal;
       }
       if (!imageValue) { statusDiv.innerHTML = '<span class="error">Выберите файл или укажите ссылку</span>'; return; }
-      const nameField = document.getElementById('editName-' + productId);
-      const productName = nameField ? nameField.value.trim() : '';
+      const productName = currentEditName(productId);
       const r = await fetch(BASE_URL + "/public_info/" + productId + ".json", {
         method: 'PUT', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({ image: imageValue, name: productName })
       });
       if (r.ok) {
         statusDiv.innerHTML = '<span class="success">✅ Информация сохранена</span>';
+        saveToSharedHistory(productId, productName, '🧾 Информация для покупателя обновлена');
         loadProductForEdit(productId);
       } else { statusDiv.innerHTML = '<span class="error">Ошибка!</span>'; }
     } catch(e) { statusDiv.innerHTML = '<span class="error">Ошибка: ' + e.message + '</span>'; }
@@ -936,6 +991,7 @@
     try {
       const r = await fetch(BASE_URL + "/public_info/" + productId + ".json", { method: 'DELETE' });
       if (r.ok) {
+        saveToSharedHistory(productId, currentEditName(productId), '🗑 Информация для покупателя удалена');
         loadProductForEdit(productId);
       } else { alert('Ошибка удаления!'); }
     } catch(e) { alert('Ошибка сети: ' + e.message); }
@@ -954,11 +1010,13 @@
 
   window.deleteProduct = async function(productId) {
     if (!confirm('Удалить товар #' + productId + ' полностью? Это нельзя отменить!')) return;
+    const productName = currentEditName(productId);
     try {
       const r = await fetch(BASE_URL + "/products/" + productId + ".json", { method: 'DELETE' });
       if (r.ok) {
         document.getElementById('editResult').innerHTML = '<span class="success">✅ Товар удалён.</span>';
         document.getElementById('editSearchId').value = '';
+        saveToSharedHistory(productId, productName, '🗑 Товар удалён полностью');
       } else {
         alert('Ошибка удаления!');
       }
@@ -1192,6 +1250,59 @@
       console.warn('Ошибка загрузки истории товара:', e);
     }
   };
+
+  window.searchProductHistory = async function() {
+    const raw = document.getElementById('historySearchInput').value.trim();
+    const resDiv = document.getElementById('historySearchResult');
+    if (!raw) return;
+    resDiv.innerHTML = '<div style="color:var(--text-muted);font-size:13px;padding:6px 0;">Поиск...</div>';
+
+    const idCandidate = sanitizeKey(raw);
+    try {
+      const prodResp = await fetch(BASE_URL + "/products/" + idCandidate + ".json");
+      const product = await prodResp.json();
+      if (product && product.name) {
+        resDiv.innerHTML = '';
+        showProductHistory(idCandidate, product.name);
+        return;
+      }
+    } catch(e) { /* пробуем искать по названию */ }
+
+    try {
+      const allResp = await fetch(BASE_URL + "/products.json");
+      const allProducts = await allResp.json();
+      if (!allProducts || typeof allProducts !== 'object') {
+        resDiv.innerHTML = '<span class="error">Товар не найден.</span>';
+        return;
+      }
+      const qLower = raw.toLowerCase();
+      const matches = Object.keys(allProducts)
+        .filter(function(pid) { const p = allProducts[pid]; return p && p.name && p.name.toLowerCase().includes(qLower); })
+        .map(function(pid) { return { id: pid, name: allProducts[pid].name }; });
+
+      if (matches.length === 0) {
+        resDiv.innerHTML = '<span class="error">Товар не найден.</span>';
+      } else if (matches.length === 1) {
+        resDiv.innerHTML = '';
+        showProductHistory(matches[0].id, matches[0].name);
+      } else {
+        let html = '<div style="font-size:12px;color:var(--text-muted);margin:6px 0;">Найдено несколько товаров — выберите:</div>';
+        matches.forEach(function(m) {
+          html += '<div class="cabinet-product-row" onclick="showProductHistory(\'' + m.id + '\',\'' + m.name.replace(/'/g, '') + '\')" style="cursor:pointer;">' +
+            '<span class="cabinet-product-name">' + m.name + '</span>' +
+            '<span class="cabinet-product-code">' + m.id + '</span>' +
+          '</div>';
+        });
+        resDiv.innerHTML = html;
+      }
+    } catch(e) {
+      resDiv.innerHTML = '<span class="error">Ошибка сети: ' + e.message + '</span>';
+    }
+  };
+
+  document.getElementById('historySearchInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') searchProductHistory();
+  });
 
   function quickSearchFromHistory() {
     const title = document.getElementById('productHistoryTitle').textContent;
