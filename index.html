@@ -1211,6 +1211,15 @@
     loading.style.display = 'block';
     modal.style.display = 'flex';
 
+    const totalQtyDiv = document.getElementById('productHistoryTotalQty');
+    totalQtyDiv.textContent = '';
+    fetch(BASE_URL + "/products/" + productId + "/cabinets.json")
+      .then(function(r) { return r.json(); })
+      .then(function(cabinets) {
+        totalQtyDiv.textContent = '📦 Сейчас на складе: ' + sumCabinets(cabinets) + ' шт.';
+      })
+      .catch(function() { /* если не удалось — просто не показываем сумму */ });
+
     try {
       // Загружаем ВСЕ записи по этому товару из Firebase
       const resp = await fetch(BASE_URL + "/search_history.json?orderBy=%22id%22&equalTo=%22" + productId + "%22");
@@ -1327,6 +1336,7 @@
       <button onclick="document.getElementById('productHistoryModal').style.display='none'"
         style="background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:14px;margin-left:10px;">✕</button>
     </div>
+    <div id="productHistoryTotalQty" style="font-size:13px;color:var(--green);font-weight:bold;margin-bottom:12px;"></div>
     <div style="display:flex;gap:8px;margin-bottom:12px;">
       <button onclick="quickSearchFromHistory()" style="flex:1;padding:9px;background:var(--blue);color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:bold;">🔍 Открыть товар</button>
     </div>
